@@ -1185,12 +1185,20 @@ export default function LifeCHOPage() {
                       )}
                     </div>
                     
-                    {/* 录音按钮 - 移到下方更加显眼的位置 */}
+                    {/* 录音/开始 组合按钮 */}
                     <div className="flex justify-center pt-2 pb-4">
                       <motion.button
                         whileHover={{ scale: 1.05 }}
                         whileTap={{ scale: 0.95 }}
                         onClick={async () => {
+                          const hasText = entryText && entryText.trim().length > 0;
+                          
+                          // 如果有文本且不在录音/转写中，则进入下一阶段
+                          if (hasText && !isEntryRecording && !isTranscribing) {
+                            setStage('interaction');
+                            return;
+                          }
+
                           if (isEntryRecording) {
                             // 停止录音 → 转写
                             setIsEntryRecording(false);
@@ -1234,11 +1242,22 @@ export default function LifeCHOPage() {
                             ? 'bg-[#E76F51] text-white animate-pulse ring-4 ring-[#E76F51]/20' 
                             : isTranscribing
                               ? 'bg-[#F4A261]/20 text-[#F4A261] cursor-wait'
-                              : 'bg-[#E76F51] text-white hover:bg-[#E76F51]/90 shadow-md'
+                              : (entryText && entryText.trim().length > 0)
+                                ? 'bg-[#E76F51] text-white hover:bg-[#E76F51]/90 shadow-md ring-2 ring-[#E76F51]/20'
+                                : 'bg-[#E76F51] text-white hover:bg-[#E76F51]/90 shadow-md'
                         }`}
                       >
-                        <Mic size={20} />
-                        {isEntryRecording ? 'Stop Recording' : isTranscribing ? 'Transcribing...' : 'Tap to Speak'}
+                        {(entryText && entryText.trim().length > 0 && !isEntryRecording && !isTranscribing) ? (
+                          <>
+                            <Sparkles size={20} />
+                            Start Speaking
+                          </>
+                        ) : (
+                          <>
+                            <Mic size={20} />
+                            {isEntryRecording ? 'Stop Recording' : isTranscribing ? 'Transcribing...' : 'Tap to Speak'}
+                          </>
+                        )}
                       </motion.button>
                     </div>
 
@@ -1257,23 +1276,7 @@ export default function LifeCHOPage() {
                     )}
                   </div>
 
-                  {/* 确认按钮 */}
-                  <div className="flex justify-center">
-                    <motion.button 
-                      whileHover={{ scale: 1.04, y: -2 }}
-                      whileTap={{ scale: 0.97 }}
-                      onClick={() => {
-                        if (entryText.trim()) {
-                          setStage('interaction');
-                        } else {
-                          alert('Please enter a topic first');
-                        }
-                      }}
-                      className="px-10 py-3.5 bg-[#E76F51] text-white font-bold text-sm rounded-full flex items-center gap-2 shadow-float hover:shadow-float-lg transition-shadow"
-                    >
-                      <Sparkles size={16} /> Start Speaking
-                    </motion.button>
-                  </div>
+
                 </motion.div>
               </div>
             </motion.div>
