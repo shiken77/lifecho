@@ -1,0 +1,150 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@700&family=M+PLUS+Rounded+1c:wght@700&family=Kosugi+Maru&display=swap');
+
+:root {
+  --font-inter: system-ui, -apple-system, sans-serif;
+  --font-playfair: Georgia, serif;
+  --cream: #FEFCF6;
+  --warm-orange: #F4A261;
+  --soft-coral: #E76F51;
+  --sage: #8CB369;
+  --sky: #7EC8E3;
+  --ink: #3D3630;
+}
+
+/* 隐藏滚动条 */
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* 3D悬浮动画 */
+@keyframes float {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-14px) rotate(2deg); }
+}
+
+@keyframes floatSlow {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-10px) rotate(-1.5deg); }
+}
+
+@keyframes floatReverse {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-12px) rotate(1.5deg); }
+}
+
+.float-1 { animation: float 4s ease-in-out infinite; }
+.float-2 { animation: floatSlow 5s ease-in-out infinite 0.5s; }
+.float-3 { animation: floatReverse 4.5s ease-in-out infinite 1s; }
+.float-4 { animation: float 5.5s ease-in-out infinite 1.5s; }
+.float-5 { animation: floatSlow 4s ease-in-out infinite 2s; }
+.float-6 { animation: floatReverse 5s ease-in-out infinite 0.8s; }
+
+/* 3D hover效果 */
+.hover-3d {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.hover-3d:hover {
+  transform: translateY(-6px) scale(1.05);
+  box-shadow: 0 16px 40px rgba(0,0,0,0.12);
+}
+
+/* 手帐纸张质感 - 格子 + 横线 */
+.paper-texture {
+  background-color: var(--cream);
+  background-image:
+    /* 横线 - 模拟横格纸 */
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 31px,
+      rgba(180, 160, 140, 0.25) 31px,
+      rgba(180, 160, 140, 0.25) 32px
+    ),
+    /* 竖线 - 与横线组合成方格 */
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 31px,
+      rgba(180, 160, 140, 0.18) 31px,
+      rgba(180, 160, 140, 0.18) 32px
+    ),
+    /* 左侧红色竖线 - 模拟笔记本装订线 */
+    linear-gradient(
+      90deg,
+      transparent 59px,
+      rgba(231, 111, 81, 0.22) 59px,
+      rgba(231, 111, 81, 0.22) 61px,
+      transparent 61px
+    ),
+    /* 柔和的色彩渐变点缀 */
+    radial-gradient(circle at 15% 85%, rgba(244, 162, 97, 0.05) 0%, transparent 40%),
+    radial-gradient(circle at 85% 15%, rgba(140, 179, 105, 0.05) 0%, transparent 40%);
+}
+
+/* 第二页用的格子纸 - 手帐区也用 */
+.grid-paper {
+  background-color: #FDFCF9;
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 23px,
+      rgba(180, 160, 140, 0.18) 23px,
+      rgba(180, 160, 140, 0.18) 24px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 23px,
+      rgba(180, 160, 140, 0.12) 23px,
+      rgba(180, 160, 140, 0.12) 24px
+    );
+}
+
+/* 手帐胶带效果 */
+.tape {
+  position: relative;
+}
+.tape::before {
+  content: '';
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%) rotate(-2deg);
+  width: 60px;
+  height: 16px;
+  background: rgba(244, 162, 97, 0.35);
+  border-radius: 2px;
+}
+
+/* HuiFont (ふい字) - 可爱手写日语字体 */
+@font-face {
+  font-family: 'HuiFont';
+  src: url('/fonts/HuiFont29.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+.journal-font {
+  font-family: 'Zen Maru Gothic', 'M PLUS Rounded 1c', 'Kosugi Maru', 'HuiFont', 'Hiragino Maru Gothic ProN', cursive, sans-serif;
+}
+
+/* 记号笔风格文字 */
+.marker-text {
+  font-family: 'Permanent Marker', 'Patrick Hand', 'Caveat', cursive;
+  letter-spacing: 0.03em;
+  text-shadow: 1px 1px 0 rgba(61, 54, 48, 0.06);
+}
+
+/* 录音话筒波纹动画 */
+@keyframes micRipple {
+  0% { transform: scale(1); opacity: 0.4; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+.mic-ripple {
+  animation: micRipple 1.2s ease-out infinite;
+}

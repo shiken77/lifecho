@@ -1,0 +1,76 @@
+#P1首页 
+# 输入： 今日发生的事情 `happened` 
+# 输出： 同输入 
+
+#P2选项+对话+summary+日记生成
+#user journey 1: 用户选择“互动角色”，“互动语气”，“固定轮次的对话回合”，进入六轮对话中。
+#输入
+#1. 互动角色：`mentorRole`
+#2. 互动语气：`tone`,(`Gentle`, `Normal`, `Serious`)
+#3. 固定轮次对话（语音格式）：`voice_input` (转为blob格式)
+
+#输出
+# 1.ai六轮对话内容 （语音格式）
+# 2.ai六轮对话内容 （文本格式）
+# 3.ai六轮其他辅助教导内容 （文本格式）
+
+#user journey 2:用户结束对话，右边页面生成一段中日对照的summary，要求用户确认。
+#输入
+# 1.用户输入纠正意见。`correction_summary`
+#输出
+# 1.ai总结的中日对照的summary（文本格式）
+# 2.ai总结的中日对照的修正好的summary （文本格式）
+# 4.ai总结优化的对话内容 （文本格式，前端不显示）
+
+#user journey 3：页面中summary消失，自动生成一篇图文并茂的日记。
+#输出
+# 1.ai生成漫画 （图格式）
+# 2.ai生成日记内容 （文本格式）
+# 3.ai生成博客内容 （文本格式）
+# 4.ai生成博客内容 （语音格式）
+
+
+#### #P1 首页 (Entry Page)
+
+* **输入：** `happened`（由用户在 1440px 居中大文本框输入的“今日发生的事情”，作为后续 AI 对话的核心 Context）。
+* **输出：** `localStorage.happened`（同步将输入内容存入本地缓存，作为进入 P2 时的 Initial State 传递给后端）。
+
+---
+
+#### #P2 核心空间 (Option + Dialog + Summary + Diary)
+
+##### **User Journey 1: 配置与六轮对话 (Stage 1: Interaction)**
+
+* **输入：**
+1. **互动角色 (`mentorRole`)**：用户在左侧模块手动填写的扮演身份（如：`Strict Barista`）。
+2. **互动语气 (`tone`)**：用户通过点击按钮选择的语调（`Gentle`, `Normal`, `Serious`），对应按钮使用 `echo-rose` 高亮。
+3. **固定轮次对话 (`voice_input`)**：用户按住麦克风按钮录制的实时语音，前端需转为 Blob 格式发送给后端。()
+
+
+* **输出：**
+1. **AI 六轮对话语音 (`audio_base64`)**：由火山 TTS 接口生成的日语语音数据流，前端在 AI 气泡弹出时同步调用 `Audio` 对象播放。
+2. **AI 六轮对话文本 (`reply`)**：包含 5W1R 追问引导的日语文本，显示在 `echo-peach` 材质的气泡中。
+3. **AI 其他辅助教导内容 (`suggestion`)**：针对用户上一句输入的语法改进建议，显示在气泡下方的微缩 Suggestion 框内。
+
+
+
+##### **User Journey 2: 总结确认 (Stage 2: Summary)**
+
+* **输入：**
+1. **用户输入纠正意见 (`correction_summary`)**：用户在右侧 Summary 激活后的编辑框修正好的段落（如：“把咖啡换成红茶”）。
+
+
+* **输出：**
+1. **AI 总结的中日对照 Summary (`summary_draft`)**：基于 6 轮对话生成的初始中日文对照总结，采用 `echo-cream` 磨砂背景展示。
+2. **AI 总结的修正版 Summary (`refined_summary`)**：结合用户纠错意见后重新生成的最终版文本，用于下一步的绘图和日记生成。
+3. **AI 总结优化的对话内容 (`optimized_internal`)**：后端用于日记润色的隐藏语料，不直接在 UI 界面显示。
+
+
+
+##### **User Journey 3: 自动化创作 (Stage 3: Multi-modal Output)**
+
+* **输出：**
+1. **AI 生成漫画 (`manga_url`)**：调用火山文生图接口，基于 `refined_summary` 生成的 1:1 治愈系漫画插画。
+2. **AI 生成日记内容 (`diary_body`)**：使用第一人称撰写的、具有手写感的长篇日语日记文本。
+3. **AI 生成博客内容 (`blog_post`)**：右下角模块展示的英语/反思型博客文案，用于全球视角回顾。
+4. **AI 生成博客语音 (`blog_audio`)**：对上述博客内容进行的全文 TTS 语音合成，点击该模块的小喇叭即可收听。
