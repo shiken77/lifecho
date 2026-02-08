@@ -60,6 +60,8 @@ jobs:
         run: npm ci
         
       - name: Build with Next.js
+        env:
+          NEXT_PUBLIC_API_URL: https://lifecho.onrender.com
         run: npm run build
         
       - name: Upload artifact
