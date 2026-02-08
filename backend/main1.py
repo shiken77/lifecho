@@ -14,10 +14,19 @@ from google.cloud import texttospeech
 load_dotenv()
 app = FastAPI()
 
+# 健康检查路由
+@app.get("/")
+async def root():
+    return {"status": "ok", "message": "LifeEcho Backend is running"}
+
 # 跨域配置：允许前端 3000 端口访问
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",
+        "https://shikan77.github.io",
+        "*"  # 允许所有来源，确保连通性
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -87,16 +96,28 @@ def clean_json_content(content: str):
 
 # --- TTS 客户端初始化, 文字转语音 ---
 # 确保 Google Cloud 凭证路径正确设置
-tts_credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-if tts_credentials_path and not os.path.isabs(tts_credentials_path):
-    # 如果是相对路径，转换为相对于当前文件的绝对路径
-    backend_dir = os.path.dirname(os.path.abspath(__file__))
-    tts_credentials_path = os.path.join(backend_dir, tts_credentials_path)
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tts_credentials_path
+google_creds_json = os.getenv("GOOGLE_CREDENTIALS_JSON")
+tts_client = None
 
 try:
-    tts_client = texttospeech.TextToSpeechClient() # 初始化 Google TTS 客户端
-    print("✅ Google TTS 客户端初始化成功")
+    if google_creds_json:
+        # 优先使用环境变量中的 JSON 字符串
+        from google.oauth2 import service_account
+        creds_dict = json.loads(google_creds_json)
+        credentials = service_account.Credentials.from_service_account_info(creds_dict)
+        tts_client = texttospeech.TextToSpeechClient(credentials=credentials)
+        print("✅ Google TTS 客户端初始化成功 (从环境变量)")
+    else:
+        # 回退到文件路径方式 (本地开发)
+        tts_credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+        if tts_credentials_path and not os.path.isabs(tts_credentials_path):
+            # 如果是相对路径，转换为相对于当前文件的绝对路径
+            backend_dir = os.path.dirname(os.path.abspath(__file__))
+            tts_credentials_path = os.path.join(backend_dir, tts_credentials_path)
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tts_credentials_path
+        
+        tts_client = texttospeech.TextToSpeechClient() # 初始化 Google TTS 客户端
+        print("✅ Google TTS 客户端初始化成功 (从文件)")
 except Exception as e:
     print(f"❌ Google TTS 客户端初始化失败: {e}")
     tts_client = None

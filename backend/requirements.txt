@@ -5,3 +5,4 @@ google-generativeai
 python-dotenv
 google-cloud-texttospeech
 pydantic
+google-auth
