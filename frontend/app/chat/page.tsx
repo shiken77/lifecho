@@ -7,6 +7,7 @@ import {
   Languages, Volume2, Info, CheckCircle2, Headphones, Layers,
   Download, Share2
 } from 'lucide-react';
+import { API_BASE_URL } from '../config';
 
  
 
@@ -248,7 +249,7 @@ export default function LifeCHOPage() {
     
     setIsDetectingRoles(true);
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/detect_roles', {
+      const response = await fetch(`${API_BASE_URL}/api/detect_roles`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -488,7 +489,7 @@ export default function LifeCHOPage() {
             '严肃/工作': 'Serious'
           };
           
-          const response = await fetch('http://127.0.0.1:8000/api/summarize', {
+          const response = await fetch(`${API_BASE_URL}/api/summarize`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -536,7 +537,7 @@ export default function LifeCHOPage() {
           };
           
           // 1. 生成播客和日记
-          const podcastResponse = await fetch('http://127.0.0.1:8000/api/generate_podcast_and_diary', {
+          const podcastResponse = await fetch(`${API_BASE_URL}/api/generate_podcast_and_diary`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -557,7 +558,7 @@ export default function LifeCHOPage() {
             
             // 2. 生成播客音频
             if (podcastData.script && podcastData.script.length > 0) {
-              const audioResponse = await fetch('http://127.0.0.1:8000/api/generate_podcast_audio', {
+              const audioResponse = await fetch(`${API_BASE_URL}/api/generate_podcast_audio`, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
@@ -579,7 +580,7 @@ export default function LifeCHOPage() {
             }
             
             // 3. 生成场景图片
-            const imageResponse = await fetch('http://127.0.0.1:8000/api/generate_image', {
+            const imageResponse = await fetch(`${API_BASE_URL}/api/generate_image`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -706,7 +707,7 @@ export default function LifeCHOPage() {
       };
       
       // 调用API生成第一轮AI提问（history为空）
-      const response = await fetch('http://127.0.0.1:8000/api/chat', {
+      const response = await fetch(`${API_BASE_URL}/api/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -925,7 +926,7 @@ export default function LifeCHOPage() {
       };
       
       // 发送音频到后端，Gemini 会同时进行转写和生成回复
-      const response = await fetch('http://127.0.0.1:8000/api/chat', {
+      const response = await fetch(`${API_BASE_URL}/api/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1202,7 +1203,7 @@ export default function LifeCHOPage() {
                             setIsTranscribing(true);
                             try {
                               console.log(`🎤 发送音频到 /api/transcribe, base64长度=${audioData.base64.length}, mime=${audioData.mimeType}`);
-                              const res = await fetch('http://127.0.0.1:8000/api/transcribe', {
+                              const res = await fetch(`${API_BASE_URL}/api/transcribe`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ audio_base64: audioData.base64, audio_mime_type: audioData.mimeType }),
@@ -1629,7 +1630,7 @@ export default function LifeCHOPage() {
                                     '严肃/工作': 'Serious'
                                   };
                                   
-                                  const refineResponse = await fetch('http://127.0.0.1:8000/api/refine_summary', {
+                                  const refineResponse = await fetch(`${API_BASE_URL}/api/refine_summary`, {
                                     method: 'POST',
                                     headers: {
                                       'Content-Type': 'application/json',
