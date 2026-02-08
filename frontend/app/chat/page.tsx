@@ -1158,58 +1158,6 @@ export default function LifeCHOPage() {
                     <div className="space-y-4 pt-2">
                       <div className="flex items-center justify-between">
                         <p className="text-xs font-bold text-[#3D3630]/30 uppercase tracking-widest">Today&apos;s Topic</p>
-                        <motion.button
-                          whileTap={{ scale: 0.9 }}
-                          onClick={async () => {
-                            if (isEntryRecording) {
-                              // 停止录音 → 转写
-                              setIsEntryRecording(false);
-                              setVoiceError(null);
-                              const audioData = await stopRecording();
-                              if (!audioData) {
-                                setVoiceError('没有录到声音，请再说一遍');
-                                return;
-                              }
-                              setIsTranscribing(true);
-                              try {
-                                console.log(`🎤 发送音频到 /api/transcribe, base64长度=${audioData.base64.length}, mime=${audioData.mimeType}`);
-                                const res = await fetch('http://127.0.0.1:8000/api/transcribe', {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ audio_base64: audioData.base64, audio_mime_type: audioData.mimeType }),
-                                });
-                                const data = await res.json();
-                                console.log('🎤 转写结果:', data);
-                                if (data.status === 'SUCCESS' && data.text && data.text.trim()) {
-                                  setEntryText(prev => prev ? prev + ' ' + data.text : data.text);
-                                  setVoiceError(null);
-                                } else {
-                                  setVoiceError('没有识别到语音内容，请再说一遍');
-                                }
-                              } catch (err) {
-                                console.error('Transcribe failed:', err);
-                                setVoiceError('语音识别失败，请重试');
-                              } finally {
-                                setIsTranscribing(false);
-                              }
-                            } else {
-                              // 开始录音
-                              setVoiceError(null);
-                              const started = await startRecording();
-                              if (started) setIsEntryRecording(true);
-                            }
-                          }}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${
-                            isEntryRecording 
-                              ? 'bg-[#E76F51] text-white animate-pulse' 
-                              : isTranscribing
-                                ? 'bg-[#F4A261]/20 text-[#F4A261]'
-                                : 'bg-[#F4A261]/10 text-[#F4A261] hover:bg-[#F4A261]/20'
-                          }`}
-                        >
-                          <Mic size={14} />
-                          {isEntryRecording ? 'Stop' : isTranscribing ? 'Transcribing...' : 'Speak'}
-                        </motion.button>
                       </div>
                       <textarea
                         value={entryText}
@@ -1236,6 +1184,63 @@ export default function LifeCHOPage() {
                       )}
                     </div>
                     
+                    {/* 录音按钮 - 移到下方更加显眼的位置 */}
+                    <div className="flex justify-center pt-2 pb-4">
+                      <motion.button
+                        whileHover={{ scale: 1.05 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={async () => {
+                          if (isEntryRecording) {
+                            // 停止录音 → 转写
+                            setIsEntryRecording(false);
+                            setVoiceError(null);
+                            const audioData = await stopRecording();
+                            if (!audioData) {
+                              setVoiceError('没有录到声音，请再说一遍');
+                              return;
+                            }
+                            setIsTranscribing(true);
+                            try {
+                              console.log(`🎤 发送音频到 /api/transcribe, base64长度=${audioData.base64.length}, mime=${audioData.mimeType}`);
+                              const res = await fetch('http://127.0.0.1:8000/api/transcribe', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ audio_base64: audioData.base64, audio_mime_type: audioData.mimeType }),
+                              });
+                              const data = await res.json();
+                              console.log('🎤 转写结果:', data);
+                              if (data.status === 'SUCCESS' && data.text && data.text.trim()) {
+                                setEntryText(prev => prev ? prev + ' ' + data.text : data.text);
+                                setVoiceError(null);
+                              } else {
+                                setVoiceError('没有识别到语音内容，请再说一遍');
+                              }
+                            } catch (err) {
+                              console.error('Transcribe failed:', err);
+                              setVoiceError('语音识别失败，请重试');
+                            } finally {
+                              setIsTranscribing(false);
+                            }
+                          } else {
+                            // 开始录音
+                            setVoiceError(null);
+                            const started = await startRecording();
+                            if (started) setIsEntryRecording(true);
+                          }
+                        }}
+                        className={`w-full py-4 rounded-xl font-bold text-base flex items-center justify-center gap-2 shadow-sm transition-all ${
+                          isEntryRecording 
+                            ? 'bg-[#E76F51] text-white animate-pulse ring-4 ring-[#E76F51]/20' 
+                            : isTranscribing
+                              ? 'bg-[#F4A261]/20 text-[#F4A261] cursor-wait'
+                              : 'bg-[#E76F51] text-white hover:bg-[#E76F51]/90 shadow-md'
+                        }`}
+                      >
+                        <Mic size={20} />
+                        {isEntryRecording ? 'Stop Recording' : isTranscribing ? 'Transcribing...' : 'Tap to Speak'}
+                      </motion.button>
+                    </div>
+
                     {/* 识别到的角色标签 */}
                     {detectedRoles.length > 0 && (
                       <div className="mt-4 pt-4 border-t border-dashed border-[#3D3630]/10">
