@@ -17,6 +17,7 @@ interface ChatTurn {
   user_ja: string;
   reply: string;
   translation: string;
+  translation_en?: string;
   suggestion: any;
 }
 
@@ -996,6 +997,7 @@ export default function LifeCHOPage() {
                   user_ja: rawArray[0].user_ja || entryText,
                   reply: firstAIReply.reply || firstAIReply.content || '',
                   translation: firstAIReply.translation || '',
+                  translation_en: firstAIReply.translation_en || '',
                   suggestion: firstAIReply.suggestion || null
                 });
               }
@@ -1018,6 +1020,7 @@ export default function LifeCHOPage() {
                     user_ja: userMsg.user_ja || '',
                     reply: aiMsg.reply || aiMsg.content || '',
                     translation: aiMsg.translation || '',
+                    translation_en: aiMsg.translation_en || '',
                     suggestion: aiMsg.suggestion || null
                   });
                 }
@@ -1250,7 +1253,7 @@ export default function LifeCHOPage() {
                         {(entryText && entryText.trim().length > 0 && !isEntryRecording && !isTranscribing) ? (
                           <>
                             <Sparkles size={20} />
-                            Start Speaking
+                            Start Conversation
                           </>
                         ) : (
                           <>
@@ -1404,10 +1407,19 @@ export default function LifeCHOPage() {
                             <div className="bg-white p-4 rounded-2xl rounded-bl-md shadow-soft border border-[#3D3630]/5">
                               <p className="text-sm leading-relaxed">{turn.reply}</p>
                               <AnimatePresence>
-                                {showTranslation[idx] && turn.translation && (
-                                  <motion.p initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-3 pt-3 border-t border-[#F4A261]/15 text-xs text-[#E76F51]/70 italic leading-relaxed">
-                                    {turn.translation}
-                                  </motion.p>
+                                {showTranslation[idx] && (
+                                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-3 pt-3 border-t border-[#F4A261]/15 space-y-2">
+                                    {turn.translation && (
+                                      <p className="text-xs text-[#E76F51]/70 italic leading-relaxed">
+                                        {turn.translation}
+                                      </p>
+                                    )}
+                                    {turn.translation_en && (
+                                      <p className="text-xs text-[#E76F51]/60 italic leading-relaxed font-serif">
+                                        {turn.translation_en}
+                                      </p>
+                                    )}
+                                  </motion.div>
                                 )}
                               </AnimatePresence>
                               <div className="mt-3 flex gap-3">

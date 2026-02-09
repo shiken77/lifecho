@@ -220,6 +220,7 @@ async def chat(request: ChatRequest):
      "user_ja":"将种子话题翻译成自然的日语表达",
      "reply": "日语回复（共情 + 一个问题，使用第一人称扮演{request.mentorRole}）",
      "translation": "⚠️ 必须是 reply 的【简体中文】翻译，不能是日语，不能重复 reply",
+     "translation_en": "⚠️ 必须是 reply 的【英文】翻译",
      "suggestion": null,
      "status": "CONTINUE",
     }}
@@ -258,6 +259,7 @@ async def chat(request: ChatRequest):
        "user_ja":"用户真实意图的日语整理版",
       "reply": "日语回复（必须包含结束语，使用第一人称扮演{request.mentorRole}）",
       "translation": "⚠️ 必须是 reply 的【简体中文】翻译，不能是日语，不能重复 reply",
+      "translation_en": "⚠️ 必须是 reply 的【英文】翻译",
       "suggestion": "四维度的改进建议及正确表达",
       "status": "FINISHED",
     }}
@@ -305,6 +307,7 @@ async def chat(request: ChatRequest):
        "user_ja":"用户真实意图的日语整理版",
       "reply": "日语回复（使用第一人称扮演{request.mentorRole}）",
       "translation": "⚠️ 必须是 reply 的【简体中文】翻译，不能是日语，不能重复 reply",
+      "translation_en": "⚠️ 必须是 reply 的【英文】翻译",
       "suggestion": "四维度的改进建议及正确表达",
       "status": "CONTINUE/FINISHED",
     }}
