@@ -1407,18 +1407,11 @@ export default function LifeCHOPage() {
                             <div className="bg-white p-4 rounded-2xl rounded-bl-md shadow-soft border border-[#3D3630]/5">
                               <p className="text-sm leading-relaxed">{turn.reply}</p>
                               <AnimatePresence>
-                                {showTranslation[idx] && (
-                                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-3 pt-3 border-t border-[#F4A261]/15 space-y-2">
-                                    {turn.translation && (
-                                      <p className="text-xs text-[#E76F51]/70 italic leading-relaxed">
-                                        {turn.translation}
-                                      </p>
-                                    )}
-                                    {turn.translation_en && (
-                                      <p className="text-xs text-[#E76F51]/60 italic leading-relaxed font-serif">
-                                        {turn.translation_en}
-                                      </p>
-                                    )}
+                                {showTranslation[idx] && turn.translation_en && (
+                                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-3 pt-3 border-t border-[#F4A261]/15">
+                                    <p className="text-xs text-[#E76F51]/60 italic leading-relaxed font-serif">
+                                      {turn.translation_en}
+                                    </p>
                                   </motion.div>
                                 )}
                               </AnimatePresence>
@@ -1428,7 +1421,7 @@ export default function LifeCHOPage() {
                                     <Volume2 size={10} className={playingReplyIdx === idx ? 'text-[#E76F51] animate-pulse' : ''} /> {playingReplyIdx === idx ? 'Pause' : 'Play'}
                                   </button>
                                 )}
-                                {turn.translation && (
+                                {(turn.translation || turn.translation_en) && (
                                   <button onClick={() => setShowTranslation(p => ({...p, [idx]: !p[idx]}))} className="text-[9px] font-bold uppercase tracking-wider text-[#3D3630]/25 hover:text-[#E76F51] flex items-center gap-1 transition-colors">
                                     <Languages size={10} /> {showTranslation[idx] ? 'Hide' : 'Translate'}
                                   </button>
