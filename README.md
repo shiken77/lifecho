@@ -2,17 +2,27 @@
 
 > Don't forget the sweet moment.
 
-LifeEcho is an AI-powered interactive journal application that combines cute, handwritten-style aesthetics with intelligent role-playing and voice interaction. It helps you capture and cherish your daily moments through engaging conversations.
+Lifecho is an web app focusing on second-language communication improvement that you and lifecho can cocreate your life together and generate a diary-based notebook
 
 ![LifeEcho Demo](https://via.placeholder.com/800x400?text=LifeEcho+Preview)
 
+## Pain point and solution
+
+1. Disconnection from Reality: Traditional language learning is often detached from daily life. Many students can pass standardized tests but struggle to describe their own day or handle spontaneous scenarios—like chatting with a bartender or a new friend—because textbooks rely on generic, rigid scripts.
+
+2.Speaking Anxiety: Most learners lack a natural language environment. This absence of consistent, low-stakes practice leads to "speaking anxiety," making them hesitant to use the language in the real world.
+
+We were inspired by the Self-Reference Effect: we learn fastest when information relates directly to our own experiences. Furthermore, the acts of co-creation and journaling foster positive emotional engagement, transforming the app into a space for self-care and self-expression.
+
+Thus, we built Lifecho. It turns your personal memories into your primary curriculum, making the language journey more exciting and providing a genuine channel for self-expression.
+
 ## Features
 
-- **🎨 Cute Handwritten UI**: A unique, comforting interface featuring Japanese handwritten fonts and animated stroke-by-stroke titles.
-- **🤖 AI Role-Play**: Chat with different personas (Gentle Friend, Normal, Serious) powered by Google Gemini.
-- **🗣️ Voice Interaction**: Support for voice input and text-to-speech feedback.
-- **📝 Memory Summarization**: Automatically summarizes your conversations into journal entries.
-- **🎌 Bilingual Support**: Designed for Japanese/English interaction contexts.
+1. Scene Conversation practice: An AI coach remind you a real-world scenarios based on your captured memories, allowing you to practice dialogue that actually matters to you
+
+2. Multimodal Scrapbook: lifecho capture your day through your conversation with it, it can generate audio, photos, and narratives podcast script, creating a "living" textbook 
+
+3. Multi-Perspective Learning: The app guide you how to describe the same event from different angles (especially there are causal and polite grammar in Japanese) deepening your linguistic flexibility.
 
 ## Tech Stack
 
@@ -35,40 +45,6 @@ LifeEcho is an AI-powered interactive journal application that combines cute, ha
 - Python (v3.9+)
 - Google Gemini API Key
 - Google Cloud Credentials (for TTS)
-
-### Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/shiken77/lifecho.git
-   cd lifecho
-   ```
-
-2. **Frontend Setup**
-   ```bash
-   cd frontend
-   npm install
-   npm run dev
-   ```
-   The frontend will be available at `http://localhost:3000`.
-
-3. **Backend Setup**
-   ```bash
-   cd backend
-   # Create virtual environment (optional but recommended)
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   
-   # Install dependencies
-   pip install fastapi uvicorn google-generativeai python-dotenv google-cloud-texttospeech
-   
-   # Setup Environment Variables
-   # Create a .env file in backend/ with:
-   # GEMINI_API_KEY=your_api_key_here
-   
-   # Run the server
-   uvicorn main1:app --reload --port 8000
-   ```
 
 ## License
 
