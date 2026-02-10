@@ -4,14 +4,16 @@
 
 Lifecho is an web app focusing on second-language communication improvement that you and lifecho can cocreate your life together and generate a diary-based notebook
 
-[Try LifeEcho](https://shiken77.github.io/lifecho/chat)
+[Try LifeEcho !!! ](https://shiken77.github.io/lifecho/chat)
+
 ![lifecho](https://raw.githubusercontent.com/shiken77/lifecho/main/test1.jpg)
+![lifecho](https://raw.githubusercontent.com/shiken77/lifecho/main/test2.jpg)
 
 ## Pain point and solution
 
 1. Disconnection from Reality: Traditional language learning is often detached from daily life. Many students can pass standardized tests but struggle to describe their own day or handle spontaneous scenarios—like chatting with a bartender or a new friend—because textbooks rely on generic, rigid scripts.
 
-2.Speaking Anxiety: Most learners lack a natural language environment. This absence of consistent, low-stakes practice leads to "speaking anxiety," making them hesitant to use the language in the real world.
+2. Speaking Anxiety: Most learners lack a natural language environment. This absence of consistent, low-stakes practice leads to "speaking anxiety," making them hesitant to use the language in the real world.
 
 We were inspired by the Self-Reference Effect: we learn fastest when information relates directly to our own experiences. Furthermore, the acts of co-creation and journaling foster positive emotional engagement, transforming the app into a space for self-care and self-expression.
 
@@ -40,6 +42,6 @@ Thus, we built Lifecho. It turns your personal memories into your primary curric
 - **Language**: Python
 
 
-## License
+# License
 
 [MIT](LICENSE)
