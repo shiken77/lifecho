@@ -4,8 +4,8 @@
 
 Lifecho is an web app focusing on second-language communication improvement that you and lifecho can cocreate your life together and generate a diary-based notebook
 
-![LifeEcho Demo](https://shiken77.github.io/lifecho/chat)
-![Alt text]([https://github.com/shiken77/lifecho/blob/main/test1.jpg])
+[Try LifeEcho](https://shiken77.github.io/lifecho/chat)
+![lifecho](https://raw.githubusercontent.com/shiken77/lifecho/main/test1.jpg)
 
 ## Pain point and solution
 
@@ -25,27 +25,20 @@ Thus, we built Lifecho. It turns your personal memories into your primary curric
 
 3. Multi-Perspective Learning: The app guide you how to describe the same event from different angles (especially there are causal and polite grammar in Japanese) deepening your linguistic flexibility.
 
-## Tech Stack
+# Tech Stack
 
-### Frontend
+## Frontend
 - **Framework**: [Next.js 14](https://nextjs.org/) (App Router)
 - **Styling**: [Tailwind CSS](https://tailwindcss.com/)
 - **Animation**: [Framer Motion](https://www.framer.com/motion/) (SVG path animations, layout transitions)
 - **Icons**: [Lucide React](https://lucide.dev/)
 
-### Backend
+## Backend
 - **Framework**: [FastAPI](https://fastapi.tiangolo.com/)
-- **AI Model**: Google Gemini Pro
+- **AI Model**: Google Gemini 3
 - **TTS**: Google Cloud Text-to-Speech
 - **Language**: Python
 
-## Getting Started
-
-### Prerequisites
-- Node.js (v18+)
-- Python (v3.9+)
-- Google Gemini API Key
-- Google Cloud Credentials (for TTS)
 
 ## License
 
