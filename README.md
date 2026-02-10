@@ -7,7 +7,6 @@ Lifecho is an web app focusing on second-language communication improvement that
 [Try LifeEcho !!! ](https://shiken77.github.io/lifecho/chat)
 
 ![lifecho](https://raw.githubusercontent.com/shiken77/lifecho/main/test1.jpg)
-![lifecho](https://raw.githubusercontent.com/shiken77/lifecho/main/test2.jpg)
 
 ## Pain point and solution
 
