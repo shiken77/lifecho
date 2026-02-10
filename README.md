@@ -4,7 +4,8 @@
 
 Lifecho is an web app focusing on second-language communication improvement that you and lifecho can cocreate your life together and generate a diary-based notebook
 
-![LifeEcho Demo](https://via.placeholder.com/800x400?text=LifeEcho+Preview)
+![LifeEcho Demo](https://shiken77.github.io/lifecho/chat)
+![Alt text]([https://github.com/shiken77/lifecho/blob/main/test1.jpg])
 
 ## Pain point and solution
 
