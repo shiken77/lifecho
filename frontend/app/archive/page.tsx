@@ -1,43 +1,16 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
+import { API_BASE_URL } from "../config";
 
-// --- Mock data: date string -> journal entries ---
-const MOCK_JOURNALS: Record<string, { id: string; rounds: number; thumbnail?: string }[]> = {
-  "2026-03-03": [
-    { id: "2026-03-03-1", rounds: 4, thumbnail: "https://picsum.photos/seed/mar3a/120/90" },
-  ],
-  "2026-03-07": [
-    { id: "2026-03-07-1", rounds: 6, thumbnail: "https://picsum.photos/seed/mar7a/120/90" },
-    { id: "2026-03-07-2", rounds: 3 },
-  ],
-  "2026-03-10": [
-    { id: "2026-03-10-1", rounds: 5, thumbnail: "https://picsum.photos/seed/mar10/120/90" },
-  ],
-  "2026-03-14": [
-    { id: "2026-03-14-1", rounds: 6, thumbnail: "https://picsum.photos/seed/mar14/120/90" },
-    { id: "2026-03-14-2", rounds: 2 },
-    { id: "2026-03-14-3", rounds: 6, thumbnail: "https://picsum.photos/seed/mar14b/120/90" },
-  ],
-  "2026-03-18": [
-    { id: "2026-03-18-1", rounds: 1 },
-  ],
-  "2026-03-21": [
-    { id: "2026-03-21-1", rounds: 6, thumbnail: "https://picsum.photos/seed/mar21/120/90" },
-  ],
-  "2026-02-10": [
-    { id: "2026-02-10-1", rounds: 4, thumbnail: "https://picsum.photos/seed/feb10/120/90" },
-  ],
-  "2026-02-14": [
-    { id: "2026-02-14-1", rounds: 6, thumbnail: "https://picsum.photos/seed/feb14/120/90" },
-    { id: "2026-02-14-2", rounds: 6, thumbnail: "https://picsum.photos/seed/feb14b/120/90" },
-  ],
-  "2026-02-22": [
-    { id: "2026-02-22-1", rounds: 3 },
-  ],
-};
+interface JournalEntry {
+  id: string;
+  rounds: number;
+  title: string;
+  thumbnail_url: string | null;
+}
 
 const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
 
@@ -50,7 +23,6 @@ function getDaysInMonth(year: number, month: number) {
   return new Date(year, month + 1, 0).getDate();
 }
 
-// Monday = 0 ... Sunday = 6 (ISO style)
 function getStartDayOfWeek(year: number, month: number) {
   const day = new Date(year, month, 1).getDay();
   return day === 0 ? 6 : day - 1;
@@ -64,17 +36,36 @@ function dateKey(year: number, month: number, day: number) {
   return `${year}-${pad2(month + 1)}-${pad2(day)}`;
 }
 
-// Accent colors for round dots
 const DOT_COLORS = ["#E76F51", "#F4A261", "#8CB369", "#7EC8E3", "#B54C62", "#6B4CB5"];
 
 export default function ArchivePage() {
   const today = new Date();
   const [year, setYear] = useState(today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth()); // 0-indexed
-  const [direction, setDirection] = useState(0); // -1 = prev, 1 = next
+  const [month, setMonth] = useState(today.getMonth());
+  const [direction, setDirection] = useState(0);
+  const [entries, setEntries] = useState<Record<string, JournalEntry[]>>({});
+  const [loading, setLoading] = useState(false);
 
   const daysInMonth = useMemo(() => getDaysInMonth(year, month), [year, month]);
   const startDay = useMemo(() => getStartDayOfWeek(year, month), [year, month]);
+
+  useEffect(() => {
+    const fetchEntries = async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/journal/list?year=${year}&month=${month + 1}`);
+        if (res.ok) {
+          const data = await res.json();
+          setEntries(data.entries || {});
+        }
+      } catch (err) {
+        console.error("Failed to fetch journal list:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchEntries();
+  }, [year, month]);
 
   const goPrev = () => {
     setDirection(-1);
@@ -91,7 +82,6 @@ export default function ArchivePage() {
   const isToday = (day: number) =>
     year === today.getFullYear() && month === today.getMonth() && day === today.getDate();
 
-  // Build calendar grid cells
   const cells: (number | null)[] = [];
   for (let i = 0; i < startDay; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
@@ -125,7 +115,6 @@ export default function ArchivePage() {
             </div>
           </div>
 
-          {/* Navigation arrows */}
           <div className="flex items-center gap-2 pb-1">
             <button
               onClick={goPrev}
@@ -147,10 +136,9 @@ export default function ArchivePage() {
           <div className="absolute -top-2 left-[30%] w-12 h-3.5 bg-[#F4A261]/25 rounded-sm -rotate-2 z-10 pointer-events-none" />
           <div className="absolute -top-2 right-[20%] w-10 h-3.5 bg-[#8CB369]/20 rounded-sm rotate-1 z-10 pointer-events-none" />
 
-          {/* Calendar card */}
           <div className="bg-white rounded-2xl shadow-float border border-[#3D3630]/5 overflow-hidden">
 
-            {/* Weekday header row */}
+            {/* Weekday header */}
             <div className="grid grid-cols-7 border-b border-amber-200/50">
               {WEEKDAYS.map((day, i) => (
                 <div
@@ -164,7 +152,7 @@ export default function ArchivePage() {
               ))}
             </div>
 
-            {/* Calendar grid with animation */}
+            {/* Calendar grid */}
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={`${year}-${month}`}
@@ -180,9 +168,9 @@ export default function ArchivePage() {
                   }
 
                   const key = dateKey(year, month, day);
-                  const entries = MOCK_JOURNALS[key] || [];
-                  const hasEntries = entries.length > 0;
-                  const firstThumb = entries.find(e => e.thumbnail)?.thumbnail;
+                  const dayEntries = entries[key] || [];
+                  const hasEntries = dayEntries.length > 0;
+                  const firstThumb = dayEntries.find(e => e.thumbnail_url)?.thumbnail_url;
                   const todayMark = isToday(day);
 
                   return (
@@ -194,7 +182,6 @@ export default function ArchivePage() {
                           : "bg-[#FEFCF6]"
                       }`}
                     >
-                      {/* Date number */}
                       <span className={`absolute top-1.5 right-2 text-[11px] font-bold ${
                         todayMark
                           ? "text-white bg-[#E76F51] w-5 h-5 rounded-full flex items-center justify-center -top-0 -right-0 mt-1 mr-1"
@@ -205,22 +192,20 @@ export default function ArchivePage() {
                         {day}
                       </span>
 
-                      {/* Thumbnail image */}
                       {firstThumb && (
                         <div className="absolute inset-x-1 top-6 bottom-7 overflow-hidden rounded-md opacity-60 group-hover:opacity-90 transition-opacity">
-                          <img src={firstThumb} alt="" className="w-full h-full object-cover" />
+                          <img src={`${API_BASE_URL}${firstThumb}`} alt="" className="w-full h-full object-cover" />
                         </div>
                       )}
 
-                      {/* Round dots */}
                       {hasEntries && (
                         <div className="absolute bottom-1.5 left-1.5 right-1.5 flex items-center gap-[3px] flex-wrap">
-                          {entries.map((entry, ei) => (
+                          {dayEntries.map((entry, ei) => (
                             <Link
                               key={entry.id}
                               href={`/archive/${entry.id}`}
                               onClick={(e) => e.stopPropagation()}
-                              title={`${entry.rounds} rounds`}
+                              title={`${entry.title || entry.rounds + ' rounds'}`}
                             >
                               <span
                                 className="block w-3 h-3 rounded-full border-[1.5px] hover:scale-125 transition-transform"
@@ -251,6 +236,12 @@ export default function ArchivePage() {
             <span className="w-3 h-3 rounded-full border-[1.5px] border-[#F4A261]" />
             <span>In progress</span>
           </div>
+          {loading && (
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-3 border-2 border-[#F4A261]/30 border-t-[#F4A261] rounded-full animate-spin" />
+              <span>Loading...</span>
+            </div>
+          )}
         </div>
 
       </div>

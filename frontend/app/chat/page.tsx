@@ -118,6 +118,10 @@ export default function LifeCHOPage() {
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [audioLevels, setAudioLevels] = useState<number[]>(new Array(12).fill(3));
 
+  // Journal saving state
+  const [isSavingJournal, setIsSavingJournal] = useState(false);
+  const [journalSaved, setJournalSaved] = useState(false);
+
   // 获取支持的 mimeType
   const getSupportedMimeType = () => {
     const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
@@ -130,7 +134,13 @@ export default function LifeCHOPage() {
   // 开始录音
   const startRecording = async (): Promise<boolean> => {
     try {
+      // #region agent log
+      fetch('http://127.0.0.1:7285/ingest/efbeea11-004f-4cbf-94ce-bea60844fd1a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c49553'},body:JSON.stringify({sessionId:'c49553',location:'chat/page.tsx:startRecording',message:'startRecording called',data:{},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+      // #endregion
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // #region agent log
+      fetch('http://127.0.0.1:7285/ingest/efbeea11-004f-4cbf-94ce-bea60844fd1a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c49553'},body:JSON.stringify({sessionId:'c49553',location:'chat/page.tsx:startRecording:gotStream',message:'getUserMedia success',data:{tracks:stream.getTracks().length},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+      // #endregion
       streamRef.current = stream;
       
       const mimeType = getSupportedMimeType();
@@ -210,6 +220,9 @@ export default function LifeCHOPage() {
         const mimeType = mediaRecorder.mimeType || 'audio/webm';
         const chunks = audioChunksRef.current;
         console.log(`🎤 录音结束: ${chunks.length} chunks, mimeType=${mimeType}`);
+        // #region agent log
+        fetch('http://127.0.0.1:7285/ingest/efbeea11-004f-4cbf-94ce-bea60844fd1a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c49553'},body:JSON.stringify({sessionId:'c49553',location:'chat/page.tsx:stopRecording:onstop',message:'mediaRecorder onstop fired',data:{chunksCount:chunks.length,mimeType:mimeType},timestamp:Date.now(),hypothesisId:'H2,H3'})}).catch(()=>{});
+        // #endregion
         const audioBlob = new Blob(chunks, { type: mimeType });
         console.log(`🎤 音频Blob大小: ${audioBlob.size} bytes`);
         // 停止所有轨道
@@ -218,8 +231,14 @@ export default function LifeCHOPage() {
           streamRef.current = null;
         }
         
+        // #region agent log
+        fetch('http://127.0.0.1:7285/ingest/efbeea11-004f-4cbf-94ce-bea60844fd1a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c49553'},body:JSON.stringify({sessionId:'c49553',location:'chat/page.tsx:stopRecording:blobSize',message:'audio blob created',data:{blobSize:audioBlob.size},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+        // #endregion
         if (audioBlob.size < 500) {
           console.warn('🎤 音频太小，可能没有录到声音');
+          // #region agent log
+          fetch('http://127.0.0.1:7285/ingest/efbeea11-004f-4cbf-94ce-bea60844fd1a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c49553'},body:JSON.stringify({sessionId:'c49553',location:'chat/page.tsx:stopRecording:tooSmall',message:'audio too small, returning null',data:{blobSize:audioBlob.size},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+          // #endregion
           resolve(null);
           return;
         }
@@ -358,6 +377,70 @@ export default function LifeCHOPage() {
     } catch (error) {
       console.error('Save PNG failed:', error);
       alert('Save failed, please try again later');
+    }
+  };
+
+  const blobUrlToBase64 = async (blobUrl: string): Promise<string | null> => {
+    try {
+      const res = await fetch(blobUrl);
+      const blob = await res.blob();
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const dataUrl = reader.result as string;
+          resolve(dataUrl.split(',')[1] || null);
+        };
+        reader.readAsDataURL(blob);
+      });
+    } catch { return null; }
+  };
+
+  const saveToJournal = async () => {
+    if (isSavingJournal || journalSaved) return;
+    setIsSavingJournal(true);
+    try {
+      const today = new Date();
+      const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+      const audioB64 = podcastAudioUrl ? await blobUrlToBase64(podcastAudioUrl) : null;
+      const scene1B64 = sceneImages.scene_1 ? await blobUrlToBase64(sceneImages.scene_1) : null;
+      const scene2B64 = sceneImages.scene_2 ? await blobUrlToBase64(sceneImages.scene_2) : null;
+
+      const toneMap: Record<string, string> = { '温柔/友人': 'Gentle', '正常': 'Normal', '严肃/工作': 'Serious' };
+
+      const response = await fetch(`${API_BASE_URL}/api/journal/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: dateStr,
+          title: summaryData?.title || '',
+          diary_ja: finalOutput?.diary?.content_ja || summaryData?.diary_ja || '',
+          diary_zh: summaryData?.diary_zh || '',
+          podcast_script: finalOutput?.script || [],
+          podcast_audio_base64: audioB64,
+          scene_1_base64: scene1B64,
+          scene_2_base64: scene2B64,
+          entry_text: entryText,
+          role: role,
+          tone: toneMap[tone] || tone,
+          rounds: chatTurns.length,
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('✅ Journal saved:', data.id);
+        setJournalSaved(true);
+      } else {
+        const errText = await response.text();
+        console.error('Journal save failed:', errText);
+        alert('Failed to save journal. Please try again.');
+      }
+    } catch (err) {
+      console.error('Journal save error:', err);
+      alert('Network error. Please check if backend is running.');
+    } finally {
+      setIsSavingJournal(false);
     }
   };
 
@@ -853,6 +936,9 @@ export default function LifeCHOPage() {
         setHasStartedConversation(true);
         setApiError(null); // 清除之前的错误
         
+        // #region agent log
+        fetch('http://127.0.0.1:7285/ingest/efbeea11-004f-4cbf-94ce-bea60844fd1a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c49553'},body:JSON.stringify({sessionId:'c49553',location:'chat/page.tsx:firstRound:replyAudio',message:'first round reply_audio check',data:{hasReplyAudio:!!data.reply_audio,replyAudioLen:data.reply_audio?data.reply_audio.length:0,ttsError:data.tts_error||null},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+        // #endregion
         // 播放AI回复音频（第一轮 turnIdx=0）
         if (data.reply_audio) {
           await playReplyVoice(data.reply_audio, 0);
@@ -1031,6 +1117,9 @@ export default function LifeCHOPage() {
             
             setChatTurns(processed);
             
+            // #region agent log
+            fetch('http://127.0.0.1:7285/ingest/efbeea11-004f-4cbf-94ce-bea60844fd1a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c49553'},body:JSON.stringify({sessionId:'c49553',location:'chat/page.tsx:micRelease:replyAudio',message:'micRelease reply_audio check',data:{hasReplyAudio:!!data.reply_audio,replyAudioLen:data.reply_audio?data.reply_audio.length:0,ttsError:data.tts_error||null,turnIdx:processed.length-1},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
+            // #endregion
             // 播放AI回复音频（使用当前轮次索引）
             if (data.reply_audio) {
               await playReplyVoice(data.reply_audio, processed.length - 1);
@@ -1214,6 +1303,9 @@ export default function LifeCHOPage() {
                             setIsTranscribing(true);
                             try {
                               console.log(`🎤 发送音频到 /api/transcribe, base64长度=${audioData.base64.length}, mime=${audioData.mimeType}`);
+                              // #region agent log
+                              fetch('http://127.0.0.1:7285/ingest/efbeea11-004f-4cbf-94ce-bea60844fd1a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c49553'},body:JSON.stringify({sessionId:'c49553',location:'chat/page.tsx:entry:transcribeCall',message:'calling /api/transcribe',data:{base64Len:audioData.base64.length,mimeType:audioData.mimeType},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
+                              // #endregion
                               const res = await fetch(`${API_BASE_URL}/api/transcribe`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
@@ -1221,6 +1313,9 @@ export default function LifeCHOPage() {
                               });
                               const data = await res.json();
                               console.log('🎤 转写结果:', data);
+                              // #region agent log
+                              fetch('http://127.0.0.1:7285/ingest/efbeea11-004f-4cbf-94ce-bea60844fd1a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c49553'},body:JSON.stringify({sessionId:'c49553',location:'chat/page.tsx:entry:transcribeResult',message:'transcribe API response',data:{status:data.status,text:data.text?.substring(0,100),error:data.error},timestamp:Date.now(),hypothesisId:'H4,H5'})}).catch(()=>{});
+                              // #endregion
                               if (data.status === 'SUCCESS' && data.text && data.text.trim()) {
                                 setEntryText(prev => prev ? prev + ' ' + data.text : data.text);
                                 setVoiceError(null);
@@ -1416,11 +1511,20 @@ export default function LifeCHOPage() {
                                 )}
                               </AnimatePresence>
                               <div className="mt-3 flex gap-3">
-                                {replyAudios[idx] && (
-                                  <button onClick={() => toggleReplyAudioForTurn(idx)} className="text-[9px] font-bold uppercase tracking-wider text-[#3D3630]/25 hover:text-[#E76F51] flex items-center gap-1 transition-colors">
-                                    <Volume2 size={10} className={playingReplyIdx === idx ? 'text-[#E76F51] animate-pulse' : ''} /> {playingReplyIdx === idx ? 'Pause' : 'Play'}
-                                  </button>
-                                )}
+                                <button
+                                  onClick={() => toggleReplyAudioForTurn(idx)}
+                                  disabled={!replyAudios[idx]}
+                                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wider transition-all ${
+                                    playingReplyIdx === idx
+                                      ? 'bg-[#E76F51] text-white shadow-soft'
+                                      : replyAudios[idx]
+                                        ? 'bg-[#F4A261]/15 text-[#E76F51] hover:bg-[#F4A261]/25'
+                                        : 'bg-[#3D3630]/5 text-[#3D3630]/20 cursor-not-allowed'
+                                  }`}
+                                >
+                                  <Volume2 size={12} className={playingReplyIdx === idx ? 'animate-pulse' : ''} />
+                                  {playingReplyIdx === idx ? 'Pause' : !replyAudios[idx] ? 'No Audio' : 'Play'}
+                                </button>
                                 {(turn.translation || turn.translation_en) && (
                                   <button onClick={() => setShowTranslation(p => ({...p, [idx]: !p[idx]}))} className="text-[9px] font-bold uppercase tracking-wider text-[#3D3630]/25 hover:text-[#E76F51] flex items-center gap-1 transition-colors">
                                     <Languages size={10} /> {showTranslation[idx] ? 'Hide' : 'Translate'}
@@ -1813,11 +1917,32 @@ export default function LifeCHOPage() {
                         <motion.button
                           whileHover={{ scale: 1.03 }}
                           whileTap={{ scale: 0.97 }}
+                          onClick={saveToJournal}
+                          disabled={isSavingJournal || journalSaved}
+                          className={`flex items-center gap-2 px-5 py-2 rounded-xl shadow-soft font-medium text-xs transition-all ${
+                            journalSaved
+                              ? 'bg-[#8CB369] text-white cursor-default'
+                              : isSavingJournal
+                                ? 'bg-[#F4A261]/50 text-white cursor-wait'
+                                : 'bg-[#E76F51] text-white hover:bg-[#E76F51]/90'
+                          }`}
+                        >
+                          {journalSaved ? (
+                            <><CheckCircle2 size={13} /><span>Saved</span></>
+                          ) : isSavingJournal ? (
+                            <><div className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /><span>Saving...</span></>
+                          ) : (
+                            <><PenLine size={13} /><span>Save to Journal</span></>
+                          )}
+                        </motion.button>
+                        <motion.button
+                          whileHover={{ scale: 1.03 }}
+                          whileTap={{ scale: 0.97 }}
                           onClick={saveJournalAsPNG}
-                          className="flex items-center gap-2 px-5 py-2 bg-[#E76F51] text-white rounded-xl shadow-soft font-medium text-xs"
+                          className="flex items-center gap-2 px-5 py-2 bg-white border border-[#3D3630]/10 text-[#3D3630] rounded-xl shadow-soft font-medium text-xs"
                         >
                           <Download size={13} />
-                          <span>Save</span>
+                          <span>PNG</span>
                         </motion.button>
                         <motion.button
                           whileHover={{ scale: 1.03 }}
