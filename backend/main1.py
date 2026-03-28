@@ -1,18 +1,69 @@
 import os
 import json
 import base64
+import sqlite3
 import httpx
 import google.generativeai as genai # google官方的sdk
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from typing import Literal
+from typing import Literal, Optional
 from dotenv import load_dotenv
 from google.cloud import texttospeech
+from datetime import datetime
+from pathlib import Path
+from io import BytesIO
 
 # 加载环境变量
 load_dotenv()
 app = FastAPI()
+
+# --- Uploads directory & SQLite setup ---
+UPLOADS_DIR = Path(__file__).parent / "uploads"
+UPLOADS_DIR.mkdir(exist_ok=True)
+
+DB_PATH = Path(__file__).parent / "journals.db"
+
+def get_db():
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    conn = get_db()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS journals (
+            id TEXT PRIMARY KEY,
+            date TEXT NOT NULL,
+            session_num INTEGER NOT NULL,
+            title TEXT,
+            diary_ja TEXT,
+            diary_zh TEXT,
+            podcast_script TEXT,
+            podcast_audio_path TEXT,
+            scene_1_path TEXT,
+            scene_2_path TEXT,
+            thumbnail_path TEXT,
+            entry_text TEXT,
+            role TEXT,
+            tone TEXT,
+            rounds INTEGER DEFAULT 0,
+            created_at TEXT,
+            chat_turns TEXT
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_journals_date ON journals(date)")
+    try:
+        conn.execute("ALTER TABLE journals ADD COLUMN chat_turns TEXT")
+    except Exception:
+        pass
+    conn.commit()
+    conn.close()
+
+init_db()
+
+app.mount("/uploads", StaticFiles(directory=str(UPLOADS_DIR)), name="uploads")
 
 # 健康检查路由
 @app.get("/")
@@ -101,26 +152,32 @@ tts_client = None
 
 try:
     if google_creds_json:
-        # 优先使用环境变量中的 JSON 字符串
         from google.oauth2 import service_account
         creds_dict = json.loads(google_creds_json)
         credentials = service_account.Credentials.from_service_account_info(creds_dict)
         tts_client = texttospeech.TextToSpeechClient(credentials=credentials)
         print("✅ Google TTS 客户端初始化成功 (从环境变量)")
     else:
-        # 回退到文件路径方式 (本地开发)
         tts_credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
         if tts_credentials_path and not os.path.isabs(tts_credentials_path):
-            # 如果是相对路径，转换为相对于当前文件的绝对路径
             backend_dir = os.path.dirname(os.path.abspath(__file__))
             tts_credentials_path = os.path.join(backend_dir, tts_credentials_path)
             os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tts_credentials_path
-        
-        tts_client = texttospeech.TextToSpeechClient() # 初始化 Google TTS 客户端
+
+        tts_client = texttospeech.TextToSpeechClient()
         print("✅ Google TTS 客户端初始化成功 (从文件)")
 except Exception as e:
     print(f"❌ Google TTS 客户端初始化失败: {e}")
     tts_client = None
+
+# #region agent log
+try:
+    import time as _time_mod
+    _log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '.cursor', 'debug-c49553.log')
+    _tts_ok = tts_client is not None
+    with open(_log_path, 'a') as _f: _f.write(json.dumps({"sessionId":"c49553","location":"main1.py:tts_init","message":"TTS init " + ("success" if _tts_ok else "FAILED"),"data":{"tts_ok":_tts_ok},"timestamp":int(_time_mod.time()*1000),"hypothesisId":"H1"})+'\n')
+except Exception: pass
+# #endregion
 
 # --- TTS 辅助函数：语音合成 ---
 async def synthesize_speech(text: str, speaker: str = "model"):
@@ -579,19 +636,29 @@ async def chat(request: ChatRequest):
         
         if ai_reply_text:
             try:
-                # 调用独立的 TTS 辅助函数，自动使用 ja-JP-Neural2-B 音色
                 tts_result = await synthesize_speech(text=ai_reply_text, speaker="model")
-                # 将生成的 base64 数据存入返回给前端的字典中
                 if "error" in tts_result:
                     error_msg = tts_result.get("error")
                     print(f"⚠️ TTS 合成失败: {error_msg}")
                     res_json["reply_audio"] = None
-                    res_json["tts_error"] = error_msg  # 将错误信息也返回给客户端，方便调试
+                    res_json["tts_error"] = error_msg
+                    # #region agent log
+                    try:
+                        _log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '.cursor', 'debug-c49553.log')
+                        with open(_log_path, 'a') as _f: _f.write(json.dumps({"sessionId":"c49553","location":"main1.py:chat:tts","message":"TTS failed","data":{"error":error_msg},"timestamp":int(datetime.now().timestamp()*1000),"hypothesisId":"H2"})+'\n')
+                    except Exception: pass
+                    # #endregion
                 else:
                     audio_base64 = tts_result.get("audio_base64")
                     if audio_base64:
                         res_json["reply_audio"] = audio_base64
                         print(f"✅ 成功生成回复音频，已添加到响应中")
+                        # #region agent log
+                        try:
+                            _log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '.cursor', 'debug-c49553.log')
+                            with open(_log_path, 'a') as _f: _f.write(json.dumps({"sessionId":"c49553","location":"main1.py:chat:tts","message":"TTS success","data":{"audio_len":len(audio_base64)},"timestamp":int(datetime.now().timestamp()*1000),"hypothesisId":"H2"})+'\n')
+                        except Exception: pass
+                        # #endregion
                     else:
                         print(f"⚠️ TTS 返回结果中没有 audio_base64 字段")
                         res_json["reply_audio"] = None
@@ -1563,6 +1630,9 @@ async def transcribe_audio(request: TranscribeRequest):
     """
     try:
         print(f"🎤 收到语音转写请求，音频大小={len(request.audio_base64)} 字符, mime={request.audio_mime_type}")
+        # region agent log
+        import json as _json_log; open("/Users/tiansijian/cv/lifecho/life_echo_database/lifecho/.cursor/debug-c49553.log","a").write(_json_log.dumps({"sessionId":"c49553","location":"main1.py:transcribe:entry","message":"transcribe request received","data":{"audio_b64_len":len(request.audio_base64),"mime":request.audio_mime_type},"timestamp":int(__import__('time').time()*1000),"hypothesisId":"H4"})+"\n")
+        # endregion
         if not request.audio_base64:
             return {"status": "ERROR", "error": "未提供音频数据", "text": ""}
         
@@ -1588,16 +1658,235 @@ async def transcribe_audio(request: TranscribeRequest):
         response = text_model.generate_content([audio_part, prompt])
         transcribed_text = response.text.strip()
         print(f"✅ 语音转写成功: {transcribed_text[:100]}...")
+        # region agent log
+        import json as _json_log2; open("/Users/tiansijian/cv/lifecho/life_echo_database/lifecho/.cursor/debug-c49553.log","a").write(_json_log2.dumps({"sessionId":"c49553","location":"main1.py:transcribe:success","message":"transcribe success","data":{"text_len":len(transcribed_text),"text_preview":transcribed_text[:100]},"timestamp":int(__import__('time').time()*1000),"hypothesisId":"H5"})+"\n")
+        # endregion
         return {"status": "SUCCESS", "text": transcribed_text}
     except Exception as e:
         print(f"❌ 语音转写失败: {e}")
+        # region agent log
+        import json as _json_log3; open("/Users/tiansijian/cv/lifecho/life_echo_database/lifecho/.cursor/debug-c49553.log","a").write(_json_log3.dumps({"sessionId":"c49553","location":"main1.py:transcribe:error","message":"transcribe failed","data":{"error":str(e)},"timestamp":int(__import__('time').time()*1000),"hypothesisId":"H4"})+"\n")
+        # endregion
         import traceback
         traceback.print_exc()
         return {"status": "ERROR", "error": str(e), "text": ""}
 
+# ============================================================
+# Journal persistence endpoints
+# ============================================================
+
+class JournalSaveRequest(BaseModel):
+    date: str                             # "2026-03-21"
+    title: str = ""
+    diary_ja: str = ""
+    diary_zh: str = ""
+    podcast_script: list = []             # [{speaker, content}, ...]
+    podcast_audio_base64: Optional[str] = None
+    scene_1_base64: Optional[str] = None
+    scene_2_base64: Optional[str] = None
+    entry_text: str = ""
+    role: str = ""
+    tone: str = ""
+    rounds: int = 0
+    chat_turns: list = []                 # [{user_raw_text, user_ja, reply, translation, translation_en, suggestion, reply_audio_base64}, ...]
+
+def _save_base64_file(b64: str, dest: Path, is_audio: bool = False):
+    """Decode base64 and write to file. Returns True on success."""
+    try:
+        data = base64.b64decode(b64)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+        return True
+    except Exception as e:
+        print(f"Failed to save file {dest}: {e}")
+        return False
+
+def _make_thumbnail(src_path: Path, thumb_path: Path, width: int = 240):
+    """Create a resized thumbnail. Falls back to copying the original."""
+    try:
+        from PIL import Image
+        img = Image.open(src_path)
+        ratio = width / img.width
+        new_h = int(img.height * ratio)
+        img = img.resize((width, new_h), Image.LANCZOS)
+        img.save(str(thumb_path), "PNG")
+    except ImportError:
+        import shutil
+        shutil.copy2(str(src_path), str(thumb_path))
+    except Exception as e:
+        print(f"Thumbnail generation failed: {e}")
+        import shutil
+        shutil.copy2(str(src_path), str(thumb_path))
+
+
+@app.post("/api/journal/save")
+async def save_journal(req: JournalSaveRequest):
+    try:
+        conn = get_db()
+
+        # Determine session_num for this date
+        row = conn.execute(
+            "SELECT COUNT(*) as cnt FROM journals WHERE date = ?", (req.date,)
+        ).fetchone()
+        session_num = (row["cnt"] if row else 0) + 1
+        journal_id = f"{req.date}-{session_num}"
+
+        entry_dir = UPLOADS_DIR / req.date / journal_id
+        entry_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save binary files
+        audio_path = None
+        if req.podcast_audio_base64:
+            audio_file = entry_dir / "podcast.mp3"
+            if _save_base64_file(req.podcast_audio_base64, audio_file, is_audio=True):
+                audio_path = f"{req.date}/{journal_id}/podcast.mp3"
+
+        scene_1_path = None
+        if req.scene_1_base64:
+            s1_file = entry_dir / "scene_1.png"
+            if _save_base64_file(req.scene_1_base64, s1_file):
+                scene_1_path = f"{req.date}/{journal_id}/scene_1.png"
+
+        scene_2_path = None
+        if req.scene_2_base64:
+            s2_file = entry_dir / "scene_2.png"
+            if _save_base64_file(req.scene_2_base64, s2_file):
+                scene_2_path = f"{req.date}/{journal_id}/scene_2.png"
+
+        # Generate thumbnail from scene_1
+        thumbnail_path = None
+        scene_1_file = entry_dir / "scene_1.png"
+        if scene_1_file.exists():
+            thumb_file = entry_dir / "thumbnail.png"
+            _make_thumbnail(scene_1_file, thumb_file)
+            thumbnail_path = f"{req.date}/{journal_id}/thumbnail.png"
+
+        # Process chat_turns: save reply audio files, strip base64 from stored JSON
+        chat_turns_for_db = []
+        for i, turn in enumerate(req.chat_turns):
+            turn_data = {
+                "user_raw_text": turn.get("user_raw_text", ""),
+                "user_ja": turn.get("user_ja", ""),
+                "reply": turn.get("reply", ""),
+                "translation": turn.get("translation", ""),
+                "translation_en": turn.get("translation_en", ""),
+                "suggestion": turn.get("suggestion", ""),
+                "reply_audio_path": None,
+            }
+            reply_audio_b64 = turn.get("reply_audio_base64")
+            if reply_audio_b64:
+                audio_file = entry_dir / f"reply_audio_{i}.mp3"
+                if _save_base64_file(reply_audio_b64, audio_file, is_audio=True):
+                    turn_data["reply_audio_path"] = f"{req.date}/{journal_id}/reply_audio_{i}.mp3"
+            chat_turns_for_db.append(turn_data)
+
+        conn.execute(
+            """INSERT INTO journals
+               (id, date, session_num, title, diary_ja, diary_zh, podcast_script,
+                podcast_audio_path, scene_1_path, scene_2_path, thumbnail_path,
+                entry_text, role, tone, rounds, created_at, chat_turns)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                journal_id, req.date, session_num, req.title,
+                req.diary_ja, req.diary_zh,
+                json.dumps(req.podcast_script, ensure_ascii=False),
+                audio_path, scene_1_path, scene_2_path, thumbnail_path,
+                req.entry_text, req.role, req.tone, req.rounds,
+                datetime.now().isoformat(),
+                json.dumps(chat_turns_for_db, ensure_ascii=False),
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        print(f"✅ Journal saved: {journal_id}")
+        return {"status": "SUCCESS", "id": journal_id}
+    except Exception as e:
+        print(f"❌ Journal save failed: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/journal/list")
+async def list_journals(year: int, month: int):
+    try:
+        conn = get_db()
+        month_prefix = f"{year}-{str(month).zfill(2)}"
+        rows = conn.execute(
+            "SELECT id, date, session_num, rounds, thumbnail_path, title FROM journals WHERE date LIKE ? ORDER BY date, session_num",
+            (f"{month_prefix}%",),
+        ).fetchall()
+        conn.close()
+
+        entries: dict[str, list] = {}
+        for r in rows:
+            date = r["date"]
+            if date not in entries:
+                entries[date] = []
+            entries[date].append({
+                "id": r["id"],
+                "rounds": r["rounds"],
+                "title": r["title"],
+                "thumbnail_url": f"/uploads/{r['thumbnail_path']}" if r["thumbnail_path"] else None,
+            })
+
+        return {"status": "SUCCESS", "entries": entries}
+    except Exception as e:
+        print(f"❌ Journal list failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/journal/{journal_id}")
+async def get_journal(journal_id: str):
+    try:
+        conn = get_db()
+        row = conn.execute("SELECT * FROM journals WHERE id = ?", (journal_id,)).fetchone()
+        conn.close()
+
+        if not row:
+            raise HTTPException(status_code=404, detail="Journal not found")
+
+        # Parse chat_turns and convert audio paths to URLs
+        raw_chat_turns = json.loads(row["chat_turns"]) if row["chat_turns"] else []
+        chat_turns_out = []
+        for turn in raw_chat_turns:
+            t = dict(turn)
+            if t.get("reply_audio_path"):
+                t["reply_audio_url"] = f"/uploads/{t['reply_audio_path']}"
+            else:
+                t["reply_audio_url"] = None
+            t.pop("reply_audio_path", None)
+            chat_turns_out.append(t)
+
+        return {
+            "status": "SUCCESS",
+            "id": row["id"],
+            "date": row["date"],
+            "session_num": row["session_num"],
+            "title": row["title"],
+            "diary_ja": row["diary_ja"],
+            "diary_zh": row["diary_zh"],
+            "podcast_script": json.loads(row["podcast_script"]) if row["podcast_script"] else [],
+            "podcast_audio_url": f"/uploads/{row['podcast_audio_path']}" if row["podcast_audio_path"] else None,
+            "scene_1_url": f"/uploads/{row['scene_1_path']}" if row["scene_1_path"] else None,
+            "scene_2_url": f"/uploads/{row['scene_2_path']}" if row["scene_2_path"] else None,
+            "entry_text": row["entry_text"],
+            "role": row["role"],
+            "tone": row["tone"],
+            "rounds": row["rounds"],
+            "created_at": row["created_at"],
+            "chat_turns": chat_turns_out,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Journal get failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
-    # 监听 127.0.0.1 确保本地通信稳定
     uvicorn.run(app, host="127.0.0.1", port=8000)
 
 

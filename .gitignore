@@ -42,3 +42,8 @@ env/
 google-tts-key.json
 backend/.env
 backend/google-tts-key.json
+
+# Local SQLite data, user uploads, editor metadata
+backend/journals.db
+backend/uploads/
+.cursor/
