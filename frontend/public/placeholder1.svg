@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300">
+  <rect fill="#FFF8F0" width="400" height="300"/>
+  <circle cx="200" cy="120" r="60" fill="#FFD4A8"/>
+  <circle cx="180" cy="108" r="8" fill="#3D3630"/>
+  <circle cx="220" cy="108" r="8" fill="#3D3630"/>
+  <path d="M185 135 Q200 150 215 135" stroke="#E76F51" fill="none" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="160" cy="125" r="12" fill="#FFBCBC" opacity="0.5"/>
+  <circle cx="240" cy="125" r="12" fill="#FFBCBC" opacity="0.5"/>
+  <ellipse cx="150" cy="100" rx="15" ry="25" fill="#FFD4A8"/>
+  <ellipse cx="250" cy="100" rx="15" ry="25" fill="#FFD4A8"/>
+  <text x="200" y="220" text-anchor="middle" font-size="16" fill="#E76F51">~ Memory ~</text>
+  <circle cx="80" cy="50" r="20" fill="#F4A261" opacity="0.2"/>
+  <circle cx="320" cy="250" r="25" fill="#8CB369" opacity="0.15"/>
+</svg>

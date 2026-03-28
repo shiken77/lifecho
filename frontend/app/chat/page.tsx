@@ -21,6 +21,58 @@ interface ChatTurn {
   suggestion: any;
 }
 
+// --- 对话缓存 ---
+const CACHE_KEY = 'lifecho_chat_session';
+
+interface CachedSession {
+  timestamp: number;
+  stage: 'entry' | 'interaction';
+  subStage: 'chatting' | 'summarizing' | 'final';
+  chatTurns: ChatTurn[];
+  currentRound: number;
+  entryText: string;
+  role: string;
+  tone: string;
+  detectedRoles: string[];
+  conversationHistory: any[];
+  communicationRaw: any[];
+  hasStartedConversation: boolean;
+  replyAudios: Record<number, string>;
+  summaryData: any;
+  editableSummary: any;
+  pendingUserText?: string | null;
+  wantImages?: boolean;
+}
+
+function saveSession(data: CachedSession) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+  } catch (e) {
+    console.warn('Failed to save session to localStorage:', e);
+  }
+}
+
+function loadSession(): CachedSession | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CachedSession;
+    if (!parsed.timestamp || !parsed.stage) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function clearSession() {
+  try {
+    localStorage.removeItem(CACHE_KEY);
+  } catch {}
+}
+
+const CARTOON_PLACEHOLDER_1 = "/placeholder1.svg";
+const CARTOON_PLACEHOLDER_2 = "/placeholder2.svg";
+
 function HandwrittenTitle() {
   // SVG paths for "LifeECHO" in a handwritten style
   const paths = [
@@ -122,6 +174,18 @@ export default function LifeCHOPage() {
   const [isSavingJournal, setIsSavingJournal] = useState(false);
   const [journalSaved, setJournalSaved] = useState(false);
 
+  // 图片生成开关（默认开启）
+  const [wantImages, setWantImages] = useState(true);
+
+  // 缓存恢复状态
+  const [pendingRestore, setPendingRestore] = useState<CachedSession | null>(null);
+  const cacheInitDone = React.useRef(false);
+
+  // 对话轮次：先转写确认再发送
+  const [pendingUserText, setPendingUserText] = useState<string | null>(null);
+  const [pendingAudioData, setPendingAudioData] = useState<{ base64: string; mimeType: string } | null>(null);
+  const [isTranscribingChat, setIsTranscribingChat] = useState(false);
+
   // 获取支持的 mimeType
   const getSupportedMimeType = () => {
     const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
@@ -134,13 +198,7 @@ export default function LifeCHOPage() {
   // 开始录音
   const startRecording = async (): Promise<boolean> => {
     try {
-      // #region agent log
-      fetch('http://127.0.0.1:7285/ingest/efbeea11-004f-4cbf-94ce-bea60844fd1a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c49553'},body:JSON.stringify({sessionId:'c49553',location:'chat/page.tsx:startRecording',message:'startRecording called',data:{},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      // #region agent log
-      fetch('http://127.0.0.1:7285/ingest/efbeea11-004f-4cbf-94ce-bea60844fd1a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c49553'},body:JSON.stringify({sessionId:'c49553',location:'chat/page.tsx:startRecording:gotStream',message:'getUserMedia success',data:{tracks:stream.getTracks().length},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-      // #endregion
       streamRef.current = stream;
       
       const mimeType = getSupportedMimeType();
@@ -220,9 +278,6 @@ export default function LifeCHOPage() {
         const mimeType = mediaRecorder.mimeType || 'audio/webm';
         const chunks = audioChunksRef.current;
         console.log(`🎤 录音结束: ${chunks.length} chunks, mimeType=${mimeType}`);
-        // #region agent log
-        fetch('http://127.0.0.1:7285/ingest/efbeea11-004f-4cbf-94ce-bea60844fd1a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c49553'},body:JSON.stringify({sessionId:'c49553',location:'chat/page.tsx:stopRecording:onstop',message:'mediaRecorder onstop fired',data:{chunksCount:chunks.length,mimeType:mimeType},timestamp:Date.now(),hypothesisId:'H2,H3'})}).catch(()=>{});
-        // #endregion
         const audioBlob = new Blob(chunks, { type: mimeType });
         console.log(`🎤 音频Blob大小: ${audioBlob.size} bytes`);
         // 停止所有轨道
@@ -231,14 +286,8 @@ export default function LifeCHOPage() {
           streamRef.current = null;
         }
         
-        // #region agent log
-        fetch('http://127.0.0.1:7285/ingest/efbeea11-004f-4cbf-94ce-bea60844fd1a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c49553'},body:JSON.stringify({sessionId:'c49553',location:'chat/page.tsx:stopRecording:blobSize',message:'audio blob created',data:{blobSize:audioBlob.size},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
-        // #endregion
         if (audioBlob.size < 500) {
           console.warn('🎤 音频太小，可能没有录到声音');
-          // #region agent log
-          fetch('http://127.0.0.1:7285/ingest/efbeea11-004f-4cbf-94ce-bea60844fd1a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c49553'},body:JSON.stringify({sessionId:'c49553',location:'chat/page.tsx:stopRecording:tooSmall',message:'audio too small, returning null',data:{blobSize:audioBlob.size},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
-          // #endregion
           resolve(null);
           return;
         }
@@ -424,6 +473,15 @@ export default function LifeCHOPage() {
           role: role,
           tone: toneMap[tone] || tone,
           rounds: chatTurns.length,
+          chat_turns: chatTurns.map((turn, i) => ({
+            user_raw_text: turn.user_raw_text || '',
+            user_ja: turn.user_ja || '',
+            reply: turn.reply || '',
+            translation: turn.translation || '',
+            translation_en: turn.translation_en || '',
+            suggestion: typeof turn.suggestion === 'string' ? turn.suggestion : '',
+            reply_audio_base64: replyAudios[i] || null,
+          })),
         }),
       });
 
@@ -431,6 +489,7 @@ export default function LifeCHOPage() {
         const data = await response.json();
         console.log('✅ Journal saved:', data.id);
         setJournalSaved(true);
+        clearSession();
       } else {
         const errText = await response.text();
         console.error('Journal save failed:', errText);
@@ -555,9 +614,14 @@ export default function LifeCHOPage() {
   const [isGeneratingReply, setIsGeneratingReply] = useState(false);
   const [hasStartedConversation, setHasStartedConversation] = useState(false); // 标记是否已开始对话
   
-  // 初始化：不再加载缓存，改为空状态
+  // 初始化：检测 localStorage 中是否有未完成的对话
   useEffect(() => {
+    const cached = loadSession();
+    if (cached && cached.chatTurns && cached.chatTurns.length > 0) {
+      setPendingRestore(cached);
+    }
     setLoading(false);
+    cacheInitDone.current = true;
   }, []);
   
   // 当进入总结阶段时，调用总结API
@@ -663,38 +727,39 @@ export default function LifeCHOPage() {
               }
             }
             
-            // 3. 生成场景图片
-            const imageResponse = await fetch(`${API_BASE_URL}/api/generate_image`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                context: entryText,
-                tone: toneMap[tone] || 'Gentle',
-                mentorRole: role,
-                turn: 6,
-                history: conversationHistory
-              }),
-            });
-            
-            if (imageResponse.ok) {
-              const imageData = await imageResponse.json();
-              if (imageData.scenes && imageData.scenes.length >= 2) {
-                const scene1 = imageData.scenes[0];
-                const scene2 = imageData.scenes[1];
-                
-                // 将base64转换为blob URL
-                if (scene1.image_base64) {
-                  const imgBlob1 = await fetch(`data:image/png;base64,${scene1.image_base64}`).then(res => res.blob());
-                  const imgUrl1 = URL.createObjectURL(imgBlob1);
-                  setSceneImages(prev => ({...prev, scene_1: imgUrl1}));
-                }
-                
-                if (scene2.image_base64) {
-                  const imgBlob2 = await fetch(`data:image/png;base64,${scene2.image_base64}`).then(res => res.blob());
-                  const imgUrl2 = URL.createObjectURL(imgBlob2);
-                  setSceneImages(prev => ({...prev, scene_2: imgUrl2}));
+            // 3. 生成场景图片（仅在开关开启时）
+            if (wantImages) {
+              const imageResponse = await fetch(`${API_BASE_URL}/api/generate_image`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  context: entryText,
+                  tone: toneMap[tone] || 'Gentle',
+                  mentorRole: role,
+                  turn: 6,
+                  history: conversationHistory
+                }),
+              });
+              
+              if (imageResponse.ok) {
+                const imageData = await imageResponse.json();
+                if (imageData.scenes && imageData.scenes.length >= 2) {
+                  const scene1 = imageData.scenes[0];
+                  const scene2 = imageData.scenes[1];
+                  
+                  if (scene1.image_base64) {
+                    const imgBlob1 = await fetch(`data:image/png;base64,${scene1.image_base64}`).then(res => res.blob());
+                    const imgUrl1 = URL.createObjectURL(imgBlob1);
+                    setSceneImages(prev => ({...prev, scene_1: imgUrl1}));
+                  }
+                  
+                  if (scene2.image_base64) {
+                    const imgBlob2 = await fetch(`data:image/png;base64,${scene2.image_base64}`).then(res => res.blob());
+                    const imgUrl2 = URL.createObjectURL(imgBlob2);
+                    setSceneImages(prev => ({...prev, scene_2: imgUrl2}));
+                  }
                 }
               }
             }
@@ -715,10 +780,64 @@ export default function LifeCHOPage() {
   }, [subStage, summaryData, finalOutput, communicationRaw, conversationHistory, entryText, tone, role, editableSummary]);
 
   // 播放AI回复音频（从API返回的base64）
-  // 回复音频播放器：每轮 AI 回复独立存储音频
   const [replyAudios, setReplyAudios] = useState<Record<number, string>>({}); // idx -> base64
   const [currentReplyAudio, setCurrentReplyAudio] = useState<HTMLAudioElement | null>(null);
   const [playingReplyIdx, setPlayingReplyIdx] = useState<number | null>(null);
+
+  // --- 恢复缓存的对话 ---
+  const restoreSession = (cached: CachedSession) => {
+    setStage(cached.stage);
+    setSubStage(cached.subStage);
+    setChatTurns(cached.chatTurns);
+    setCurrentRound(cached.currentRound);
+    setEntryText(cached.entryText);
+    setRole(cached.role);
+    setTone(cached.tone as '温柔/友人' | '正常' | '严肃/工作');
+    setDetectedRoles(cached.detectedRoles || []);
+    setConversationHistory(cached.conversationHistory || []);
+    setCommunicationRaw(cached.communicationRaw || []);
+    setHasStartedConversation(cached.hasStartedConversation);
+    setReplyAudios(cached.replyAudios || {});
+    if (cached.summaryData) setSummaryData(cached.summaryData);
+    if (cached.editableSummary) setEditableSummary(cached.editableSummary);
+    if (cached.pendingUserText != null) setPendingUserText(cached.pendingUserText);
+    if (cached.wantImages !== undefined) setWantImages(cached.wantImages);
+    setPendingRestore(null);
+  };
+
+  const dismissRestore = () => {
+    clearSession();
+    setPendingRestore(null);
+  };
+
+  // --- 自动保存到 localStorage ---
+  useEffect(() => {
+    if (!cacheInitDone.current) return;
+    if (journalSaved) return;
+
+    const hasContent = chatTurns.length > 0 || (stage === 'entry' && entryText.trim().length > 0);
+    if (!hasContent) return;
+
+    saveSession({
+      timestamp: Date.now(),
+      stage,
+      subStage,
+      chatTurns,
+      currentRound,
+      entryText,
+      role,
+      tone,
+      detectedRoles,
+      conversationHistory,
+      communicationRaw,
+      hasStartedConversation,
+      replyAudios,
+      summaryData,
+      editableSummary,
+      pendingUserText,
+      wantImages,
+    });
+  }, [stage, subStage, chatTurns, currentRound, entryText, role, tone, detectedRoles, conversationHistory, communicationRaw, hasStartedConversation, replyAudios, summaryData, editableSummary, journalSaved, pendingUserText, wantImages]);
 
   const playReplyVoice = async (audioBase64: string | null, turnIdx?: number) => {
     if (!audioBase64) {
@@ -936,9 +1055,6 @@ export default function LifeCHOPage() {
         setHasStartedConversation(true);
         setApiError(null); // 清除之前的错误
         
-        // #region agent log
-        fetch('http://127.0.0.1:7285/ingest/efbeea11-004f-4cbf-94ce-bea60844fd1a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c49553'},body:JSON.stringify({sessionId:'c49553',location:'chat/page.tsx:firstRound:replyAudio',message:'first round reply_audio check',data:{hasReplyAudio:!!data.reply_audio,replyAudioLen:data.reply_audio?data.reply_audio.length:0,ttsError:data.tts_error||null},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
-        // #endregion
         // 播放AI回复音频（第一轮 turnIdx=0）
         if (data.reply_audio) {
           await playReplyVoice(data.reply_audio, 0);
@@ -985,23 +1101,54 @@ export default function LifeCHOPage() {
     }
   };
 
-  // 处理录音结束：停止录音，将音频发送到后端，获取AI回复
+  // 处理录音结束：转写音频，显示可编辑文本，等待用户确认
   const handleMicRelease = async () => {
     if (!isUserSpeaking) return;
     setIsUserSpeaking(false);
     
-    // 停止录音，获取音频数据
     const audioData = await stopRecording();
     
     if (!audioData) {
       console.warn('🎤 没有录到音频数据');
       setVoiceError('没有录到声音，请再说一遍');
-      // 3秒后自动清除提示
       setTimeout(() => setVoiceError(null), 3000);
       return;
     }
-    console.log(`🎤 [chat] 音频数据: base64长度=${audioData.base64.length}, mime=${audioData.mimeType}`);
-    
+
+    // 先转写，让用户确认后再发给 AI
+    setIsTranscribingChat(true);
+    setVoiceError(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/transcribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audio_base64: audioData.base64, audio_mime_type: audioData.mimeType }),
+      });
+      const data = await res.json();
+      if (data.status === 'SUCCESS' && data.text && data.text.trim()) {
+        setPendingUserText(data.text);
+        setPendingAudioData(audioData);
+      } else {
+        setVoiceError('没有识别到语音内容，请再说一遍');
+        setTimeout(() => setVoiceError(null), 3000);
+      }
+    } catch (err) {
+      console.error('Transcribe failed:', err);
+      setVoiceError('语音识别失败，请重试');
+      setTimeout(() => setVoiceError(null), 3000);
+    } finally {
+      setIsTranscribingChat(false);
+    }
+  };
+
+  // 用户确认文本后，发送音频到 /api/chat 获取 AI 回复
+  const handleConfirmSend = async () => {
+    if (!pendingAudioData || pendingUserText === null) return;
+    const confirmedText = pendingUserText;
+    const audioData = pendingAudioData;
+    setPendingUserText(null);
+    setPendingAudioData(null);
+
     setIsGeneratingReply(true);
     setApiError(null);
       
@@ -1012,12 +1159,9 @@ export default function LifeCHOPage() {
         '严肃/工作': 'Serious'
       };
       
-      // 发送音频到后端，Gemini 会同时进行转写和生成回复
       const response = await fetch(`${API_BASE_URL}/api/chat`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           context: entryText,
           tone: toneMap[tone] || 'Gentle',
@@ -1025,7 +1169,7 @@ export default function LifeCHOPage() {
           turn: 6,
           history: [
             ...conversationHistory,
-            { role: 'user', content: '[voice input]' }
+            { role: 'user', content: confirmedText }
           ],
           previous_communication_raw: communicationRaw,
           audio_base64: audioData.base64,
@@ -1033,125 +1177,101 @@ export default function LifeCHOPage() {
         }),
       });
         
-        if (response.ok) {
-          const data = await response.json();
+      if (response.ok) {
+        const data = await response.json();
+        
+        if (data.status === 'ERROR') {
+          console.error('Backend returned ERROR:', data.error || data.reply);
+          setVoiceError('AI回复失败，请再说一遍');
+          setTimeout(() => setVoiceError(null), 3000);
+          setIsGeneratingReply(false);
+          return;
+        }
+        
+        if (!data || !data.reply) {
+          throw new Error('API返回数据格式错误');
+        }
+        
+        const userText = confirmedText || data.user_raw_text || '[voice input]';
+        const newHistory = [
+          ...conversationHistory,
+          { role: 'user', content: userText },
+          { role: 'model', content: data.reply }
+        ];
+        setConversationHistory(newHistory);
+        
+        if (data.communication_raw) {
+          setCommunicationRaw(data.communication_raw);
           
-          // 检查是否返回了ERROR状态（后端内部错误但HTTP 200）
-          if (data.status === 'ERROR') {
-            console.error('Backend returned ERROR:', data.error || data.reply);
-            setVoiceError('AI回复失败，请再说一遍');
-            setTimeout(() => setVoiceError(null), 3000);
-            setIsGeneratingReply(false);
-            return; // 保留当前聊天历史，不更新任何状态
+          const processed: ChatTurn[] = [];
+          const rawArray = data.communication_raw;
+          
+          let i = 0;
+          if (rawArray.length > 0 && rawArray[0].role === 'user' && !rawArray[0].user_raw_text && rawArray[0].content === entryText) {
+            const firstAIReply = rawArray.find((item: any) => item.role === 'model');
+            if (firstAIReply) {
+              processed.push({
+                user_raw_text: entryText,
+                user_ja: rawArray[0].user_ja || entryText,
+                reply: firstAIReply.reply || firstAIReply.content || '',
+                translation: firstAIReply.translation || '',
+                translation_en: firstAIReply.translation_en || '',
+                suggestion: firstAIReply.suggestion || null
+              });
+            }
+            i = 1;
           }
           
-          // 检查返回数据格式
-          if (!data || !data.reply) {
-            throw new Error('API返回数据格式错误');
-          }
-          
-          // 更新对话历史（语音输入时，user_raw_text 由 Gemini 转写返回）
-          const userText = data.user_raw_text || '[voice input]';
-          const newHistory = [
-            ...conversationHistory,
-            { role: 'user', content: userText },
-            { role: 'model', content: data.reply }
-          ];
-          setConversationHistory(newHistory);
-          
-          // 更新communication_raw
-          if (data.communication_raw) {
-            setCommunicationRaw(data.communication_raw);
-            
-            // 处理对话数据，更新chatTurns
-            const processed: ChatTurn[] = [];
-            const rawArray = data.communication_raw;
-            
-            // communication_raw结构：
-            // 第一轮：[context(可选), AI回复]
-            // 后续轮次：[context(可选), AI第一轮, User第二轮, AI第二轮, User第三轮, AI第三轮...]
-            // 配对逻辑：从索引0开始查找，每找到一对(user, model)就配对
-            
-            let i = 0;
-            // 跳过第一个context项（如果有且role是user但没有user_raw_text）
-            if (rawArray.length > 0 && rawArray[0].role === 'user' && !rawArray[0].user_raw_text && rawArray[0].content === entryText) {
-              // 第一轮：添加用户的种子输入
-              const firstAIReply = rawArray.find((item: any) => item.role === 'model');
-              if (firstAIReply) {
+          while (i < rawArray.length) {
+            const current = rawArray[i];
+            if (current.role === 'model' && i > 0 && rawArray[i-1].role === 'user') {
+              const userMsg = rawArray[i-1];
+              const aiMsg = current;
+              if (userMsg.content !== entryText || userMsg.user_raw_text) {
                 processed.push({
-                  user_raw_text: entryText,
-                  user_ja: rawArray[0].user_ja || entryText,
-                  reply: firstAIReply.reply || firstAIReply.content || '',
-                  translation: firstAIReply.translation || '',
-                  translation_en: firstAIReply.translation_en || '',
-                  suggestion: firstAIReply.suggestion || null
+                  user_raw_text: confirmedText && i === rawArray.length - 1 ? confirmedText : (userMsg.user_raw_text || userMsg.content || ''),
+                  user_ja: userMsg.user_ja || '',
+                  reply: aiMsg.reply || aiMsg.content || '',
+                  translation: aiMsg.translation || '',
+                  translation_en: aiMsg.translation_en || '',
+                  suggestion: aiMsg.suggestion || null
                 });
               }
-              i = 1;  // 跳过context
             }
-            
-            // 配对User和AI消息（从第二轮开始）
-            while (i < rawArray.length) {
-              const current = rawArray[i];
-              
-              // 如果是AI回复（model），且前面有用户消息
-              if (current.role === 'model' && i > 0 && rawArray[i-1].role === 'user') {
-                const userMsg = rawArray[i-1];
-                const aiMsg = current;
-                
-                // 跳过第一轮的context项
-                if (userMsg.content !== entryText || userMsg.user_raw_text) {
-                  processed.push({
-                    user_raw_text: userMsg.user_raw_text || userMsg.content || '',
-                    user_ja: userMsg.user_ja || '',
-                    reply: aiMsg.reply || aiMsg.content || '',
-                    translation: aiMsg.translation || '',
-                    translation_en: aiMsg.translation_en || '',
-                    suggestion: aiMsg.suggestion || null
-                  });
-                }
-              }
-              
-              i++;
-            }
-            
-            setChatTurns(processed);
-            
-            // #region agent log
-            fetch('http://127.0.0.1:7285/ingest/efbeea11-004f-4cbf-94ce-bea60844fd1a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c49553'},body:JSON.stringify({sessionId:'c49553',location:'chat/page.tsx:micRelease:replyAudio',message:'micRelease reply_audio check',data:{hasReplyAudio:!!data.reply_audio,replyAudioLen:data.reply_audio?data.reply_audio.length:0,ttsError:data.tts_error||null,turnIdx:processed.length-1},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
-            // #endregion
-            // 播放AI回复音频（使用当前轮次索引）
-            if (data.reply_audio) {
-              await playReplyVoice(data.reply_audio, processed.length - 1);
-            }
+            i++;
           }
           
-          // 检查是否完成对话
-          if (data.status === 'FINISHED') {
-            // 先让 currentRound 前进，确保最后一轮的对话内容能显示
-            setCurrentRound(prev => Math.max(prev + 1, chatTurns.length - 1));
-            setTimeout(() => {
-              setSubStage('summarizing');
-            }, 2000);
-          } else {
-            // 自动进入下一轮
-            setTimeout(() => {
-              nextStep();
-            }, 500);
+          setChatTurns(processed);
+          
+          if (data.reply_audio) {
+            await playReplyVoice(data.reply_audio, processed.length - 1);
           }
-        } else {
-          const errorText = await response.text();
-          console.error('API call failed:', errorText);
-          setApiError('Failed to get AI reply, please retry');
-          alert('Failed to get AI reply: ' + errorText);
         }
-      } catch (err: any) {
-        console.error('Failed to call chat API:', err);
-        setApiError('Network error, please check if backend is running');
-        alert('Network error: ' + (err.message || 'Please check if backend is running'));
-      } finally {
-        setIsGeneratingReply(false);
+        
+        if (data.status === 'FINISHED') {
+          setCurrentRound(prev => Math.max(prev + 1, chatTurns.length - 1));
+          setTimeout(() => { setSubStage('summarizing'); }, 2000);
+        } else {
+          setTimeout(() => { nextStep(); }, 500);
+        }
+      } else {
+        const errorText = await response.text();
+        console.error('API call failed:', errorText);
+        setApiError('Failed to get AI reply, please retry');
+        alert('Failed to get AI reply: ' + errorText);
       }
+    } catch (err: any) {
+      console.error('Failed to call chat API:', err);
+      setApiError('Network error, please check if backend is running');
+      alert('Network error: ' + (err.message || 'Please check if backend is running'));
+    } finally {
+      setIsGeneratingReply(false);
+    }
+  };
+
+  const handleCancelPending = () => {
+    setPendingUserText(null);
+    setPendingAudioData(null);
   };
 
   const nextStep = () => {
@@ -1162,6 +1282,7 @@ export default function LifeCHOPage() {
       setSubStage('summarizing');
     }
   };
+
 
   if (loading) return <div className="h-screen flex items-center justify-center bg-[#FEFCF6]"><div className="w-6 h-6 border-2 border-[#F4A261]/30 border-t-[#F4A261] rounded-full animate-spin"></div></div>;
 
@@ -1196,6 +1317,56 @@ export default function LifeCHOPage() {
     <div className="h-screen w-screen bg-[#FEFCF6] text-[#3D3630] font-sans selection:bg-[#F4A261]/20 overflow-hidden">
       <main className="w-full h-full">
         
+        {/* 恢复对话提示 */}
+        <AnimatePresence>
+          {pendingRestore && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center bg-[#3D3630]/30 backdrop-blur-sm"
+            >
+              <motion.div
+                initial={{ scale: 0.9, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.9, y: 20 }}
+                className="relative bg-white rounded-2xl shadow-float p-8 max-w-md w-full mx-4"
+              >
+                <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-16 h-4 bg-[#F4A261]/30 rounded-sm -rotate-1" />
+                <div className="text-center space-y-4">
+                  <span className="text-4xl">📝</span>
+                  <h3 className="text-lg font-black text-[#3D3630]">
+                    {pendingRestore.stage === 'interaction' ? '发现未完成的对话' : '发现上次的输入'}
+                  </h3>
+                  <div className="text-sm text-[#3D3630]/60 space-y-1">
+                    <p>话题：{pendingRestore.entryText.length > 40 ? pendingRestore.entryText.slice(0, 40) + '...' : pendingRestore.entryText}</p>
+                    {pendingRestore.chatTurns.length > 0 && (
+                      <p>已完成 {pendingRestore.chatTurns.length} 轮对话 / 角色：{pendingRestore.role}</p>
+                    )}
+                    <p className="text-[10px] text-[#3D3630]/30">
+                      {new Date(pendingRestore.timestamp).toLocaleString('zh-CN')}
+                    </p>
+                  </div>
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      onClick={dismissRestore}
+                      className="flex-1 py-3 px-4 rounded-xl border border-[#3D3630]/10 text-sm font-bold text-[#3D3630]/50 hover:bg-[#3D3630]/5 transition-colors"
+                    >
+                      重新开始
+                    </button>
+                    <button
+                      onClick={() => restoreSession(pendingRestore)}
+                      className="flex-1 py-3 px-4 rounded-xl bg-[#E76F51] text-white text-sm font-bold shadow-float hover:shadow-float-lg transition-shadow"
+                    >
+                      继续对话
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <AnimatePresence mode="wait">
           {stage === 'entry' && (
             <motion.div key="entry" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, y: -20 }} className="w-full h-full relative overflow-hidden paper-texture">
@@ -1303,9 +1474,6 @@ export default function LifeCHOPage() {
                             setIsTranscribing(true);
                             try {
                               console.log(`🎤 发送音频到 /api/transcribe, base64长度=${audioData.base64.length}, mime=${audioData.mimeType}`);
-                              // #region agent log
-                              fetch('http://127.0.0.1:7285/ingest/efbeea11-004f-4cbf-94ce-bea60844fd1a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c49553'},body:JSON.stringify({sessionId:'c49553',location:'chat/page.tsx:entry:transcribeCall',message:'calling /api/transcribe',data:{base64Len:audioData.base64.length,mimeType:audioData.mimeType},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
-                              // #endregion
                               const res = await fetch(`${API_BASE_URL}/api/transcribe`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
@@ -1313,9 +1481,6 @@ export default function LifeCHOPage() {
                               });
                               const data = await res.json();
                               console.log('🎤 转写结果:', data);
-                              // #region agent log
-                              fetch('http://127.0.0.1:7285/ingest/efbeea11-004f-4cbf-94ce-bea60844fd1a',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c49553'},body:JSON.stringify({sessionId:'c49553',location:'chat/page.tsx:entry:transcribeResult',message:'transcribe API response',data:{status:data.status,text:data.text?.substring(0,100),error:data.error},timestamp:Date.now(),hypothesisId:'H4,H5'})}).catch(()=>{});
-                              // #endregion
                               if (data.status === 'SUCCESS' && data.text && data.text.trim()) {
                                 setEntryText(prev => prev ? prev + ' ' + data.text : data.text);
                                 setVoiceError(null);
@@ -1617,72 +1782,118 @@ export default function LifeCHOPage() {
 
                   {/* Recording Area */}
                   <div className="p-4 border-t border-dashed border-[#3D3630]/8 bg-white/50">
-                    <div className="flex items-center gap-3">
-                      {/* 麦克风按钮 */}
-                      <div className="relative flex items-center justify-center flex-shrink-0">
-                        {isUserSpeaking && (
-                          <span className="absolute w-14 h-14 rounded-full bg-[#F4A261]/20 mic-ripple" />
-                        )}
-                        <motion.button 
-                          whileTap={chatTurns.length > 0 && hasStartedConversation ? { scale: 1.1 } : {}}
-                          onMouseDown={chatTurns.length > 0 && hasStartedConversation ? handleMicAction : undefined}
-                          onMouseUp={chatTurns.length > 0 && hasStartedConversation ? handleMicRelease : undefined}
-                          onMouseLeave={chatTurns.length > 0 && hasStartedConversation ? handleMicRelease : undefined}
-                          onTouchStart={chatTurns.length > 0 && hasStartedConversation ? handleMicAction : undefined}
-                          onTouchEnd={chatTurns.length > 0 && hasStartedConversation ? handleMicRelease : undefined}
-                          className={`relative z-10 w-12 h-12 rounded-full flex items-center justify-center transition-all ${
-                            chatTurns.length === 0 || !hasStartedConversation
-                              ? 'bg-[#F4A261]/30 cursor-not-allowed opacity-50'
-                              : isUserSpeaking
-                                ? 'bg-[#E76F51] shadow-float-lg'
-                                : 'bg-[#F4A261] hover:bg-[#E76F51] shadow-float hover:shadow-float-lg'
-                          }`}
-                          title={chatTurns.length === 0 || !hasStartedConversation ? 'Start conversation first' : 'Hold to record'}
+                    <AnimatePresence mode="wait">
+                      {pendingUserText !== null ? (
+                        /* 待确认文本编辑区 */
+                        <motion.div
+                          key="confirm"
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -8 }}
+                          className="space-y-3"
                         >
-                          <Mic size={20} className="text-white" />
-                        </motion.button>
-                      </div>
-                      
-                      {/* 波形 + 计时 */}
-                      <div className="flex-1 flex items-center gap-2">
-                        {isUserSpeaking ? (
-                          <>
-                            {/* 实时音频波形 */}
-                            <div className="flex items-center gap-[2px] h-8 flex-1">
-                              {audioLevels.map((level, i) => (
-                                <div
-                                  key={i}
-                                  className="w-1 rounded-full bg-[#E76F51] transition-all duration-100"
-                                  style={{ height: `${level}px` }}
-                                />
-                              ))}
-                            </div>
-                            {/* 录音计时 */}
-                            <div className="flex items-center gap-1.5 flex-shrink-0">
-                              <div className="w-2 h-2 rounded-full bg-[#E76F51] animate-pulse" />
-                              <span className="text-sm font-mono text-[#E76F51] font-bold tabular-nums">
-                                {Math.floor(recordingSeconds / 60).toString().padStart(2, '0')}:{(recordingSeconds % 60).toString().padStart(2, '0')}
-                              </span>
-                            </div>
-                          </>
-                        ) : (
-                          <div className="flex-1 flex items-center justify-center">
-                            {voiceError ? (
-                              <p className="text-xs text-[#E76F51] font-medium">{voiceError}</p>
-                            ) : (chatTurns.length === 0 || !hasStartedConversation) ? (
-                              <p className="text-[10px] text-[#3D3630]/30">Start conversation first</p>
-                            ) : isGeneratingReply ? (
-                              <div className="flex items-center gap-2">
-                                <div className="w-3 h-3 border-2 border-[#F4A261]/30 border-t-[#F4A261] rounded-full animate-spin" />
-                                <p className="text-[10px] text-[#3D3630]/30">Processing voice...</p>
-                              </div>
-                            ) : (
-                              <p className="text-[10px] text-[#3D3630]/30">Hold mic button to speak</p>
-                            )}
+                          <div className="flex items-center gap-2">
+                            <div className="w-1.5 h-1.5 rounded-full bg-[#F4A261]" />
+                            <p className="text-[10px] font-bold text-[#3D3630]/40 uppercase tracking-wider">Confirm your message</p>
                           </div>
-                        )}
-                      </div>
-                    </div>
+                          <textarea
+                            value={pendingUserText}
+                            onChange={(e) => setPendingUserText(e.target.value)}
+                            className="w-full bg-[#FEFCF6] border border-[#F4A261]/30 rounded-xl p-3 text-sm outline-none focus:border-[#E76F51]/50 resize-none leading-relaxed"
+                            rows={2}
+                            autoFocus
+                            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleConfirmSend(); } }}
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              onClick={handleCancelPending}
+                              className="flex-1 py-2 px-3 rounded-lg border border-[#3D3630]/10 text-xs font-bold text-[#3D3630]/40 hover:bg-[#3D3630]/5 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={handleConfirmSend}
+                              disabled={!pendingUserText.trim()}
+                              className="flex-1 py-2 px-3 rounded-lg bg-[#E76F51] text-white text-xs font-bold shadow-soft hover:bg-[#E76F51]/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                            >
+                              <Send size={12} />
+                              Confirm & Send
+                            </button>
+                          </div>
+                        </motion.div>
+                      ) : (
+                        /* 正常录音区 */
+                        <motion.div key="record" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                          <div className="flex items-center gap-3">
+                            <div className="relative flex items-center justify-center flex-shrink-0">
+                              {isUserSpeaking && (
+                                <span className="absolute w-14 h-14 rounded-full bg-[#F4A261]/20 mic-ripple" />
+                              )}
+                              <motion.button 
+                                whileTap={chatTurns.length > 0 && hasStartedConversation && !isTranscribingChat ? { scale: 1.1 } : {}}
+                                onMouseDown={chatTurns.length > 0 && hasStartedConversation && !isTranscribingChat ? handleMicAction : undefined}
+                                onMouseUp={chatTurns.length > 0 && hasStartedConversation && !isTranscribingChat ? handleMicRelease : undefined}
+                                onMouseLeave={chatTurns.length > 0 && hasStartedConversation && !isTranscribingChat ? handleMicRelease : undefined}
+                                onTouchStart={chatTurns.length > 0 && hasStartedConversation && !isTranscribingChat ? handleMicAction : undefined}
+                                onTouchEnd={chatTurns.length > 0 && hasStartedConversation && !isTranscribingChat ? handleMicRelease : undefined}
+                                className={`relative z-10 w-12 h-12 rounded-full flex items-center justify-center transition-all ${
+                                  chatTurns.length === 0 || !hasStartedConversation || isTranscribingChat
+                                    ? 'bg-[#F4A261]/30 cursor-not-allowed opacity-50'
+                                    : isUserSpeaking
+                                      ? 'bg-[#E76F51] shadow-float-lg'
+                                      : 'bg-[#F4A261] hover:bg-[#E76F51] shadow-float hover:shadow-float-lg'
+                                }`}
+                                title={chatTurns.length === 0 || !hasStartedConversation ? 'Start conversation first' : 'Hold to record'}
+                              >
+                                <Mic size={20} className="text-white" />
+                              </motion.button>
+                            </div>
+                            
+                            <div className="flex-1 flex items-center gap-2">
+                              {isUserSpeaking ? (
+                                <>
+                                  <div className="flex items-center gap-[2px] h-8 flex-1">
+                                    {audioLevels.map((level, i) => (
+                                      <div
+                                        key={i}
+                                        className="w-1 rounded-full bg-[#E76F51] transition-all duration-100"
+                                        style={{ height: `${level}px` }}
+                                      />
+                                    ))}
+                                  </div>
+                                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                                    <div className="w-2 h-2 rounded-full bg-[#E76F51] animate-pulse" />
+                                    <span className="text-sm font-mono text-[#E76F51] font-bold tabular-nums">
+                                      {Math.floor(recordingSeconds / 60).toString().padStart(2, '0')}:{(recordingSeconds % 60).toString().padStart(2, '0')}
+                                    </span>
+                                  </div>
+                                </>
+                              ) : (
+                                <div className="flex-1 flex items-center justify-center">
+                                  {voiceError ? (
+                                    <p className="text-xs text-[#E76F51] font-medium">{voiceError}</p>
+                                  ) : (chatTurns.length === 0 || !hasStartedConversation) ? (
+                                    <p className="text-[10px] text-[#3D3630]/30">Start conversation first</p>
+                                  ) : isTranscribingChat ? (
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-3 h-3 border-2 border-[#F4A261]/30 border-t-[#F4A261] rounded-full animate-spin" />
+                                      <p className="text-[10px] text-[#3D3630]/30">Transcribing...</p>
+                                    </div>
+                                  ) : isGeneratingReply ? (
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-3 h-3 border-2 border-[#F4A261]/30 border-t-[#F4A261] rounded-full animate-spin" />
+                                      <p className="text-[10px] text-[#3D3630]/30">AI is thinking...</p>
+                                    </div>
+                                  ) : (
+                                    <p className="text-[10px] text-[#3D3630]/30">Hold mic button to speak</p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
                 </div>
               </div>
@@ -1723,6 +1934,7 @@ export default function LifeCHOPage() {
                           </div>
                         )}
                         {!isGeneratingSummary && !apiError && (
+                        <>
                         <button 
                           onClick={async () => {
                             // 如果用户修改了总结，先调用refine_summary API
@@ -1784,6 +1996,23 @@ export default function LifeCHOPage() {
                         >
                           Confirm & Generate ✨
                         </button>
+                        
+                        {/* 图片生成开关 */}
+                        <div className="mt-3 flex items-center justify-between bg-amber-50/80 rounded-xl px-4 py-3 border border-amber-200/40">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-bold text-[#3D3630]/70">Generate AI Images</p>
+                            <p className="text-[10px] text-[#3D3630]/40 mt-0.5">
+                              {wantImages ? 'AI will create scene illustrations' : 'Use cute cartoon placeholders to save quota'}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => setWantImages(prev => !prev)}
+                            className={`relative ml-3 w-11 h-6 rounded-full transition-colors flex-shrink-0 ${wantImages ? 'bg-[#E76F51]' : 'bg-[#3D3630]/15'}`}
+                          >
+                            <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${wantImages ? 'left-[22px]' : 'left-0.5'}`} />
+                          </button>
+                        </div>
+                        </>
                         )}
                       </div>
                     </motion.div>
@@ -1857,7 +2086,7 @@ export default function LifeCHOPage() {
                         {/* 图片2 - 左上，大幅歪斜 */}
                         <div className="absolute top-0 left-0 w-[42%] z-10" style={{ transform: 'rotate(-5deg) translate(-4px, 0)' }}>
                           <div className="bg-white p-1.5 shadow-float" style={{ borderRadius: '2px' }}>
-                            <img src={sceneImages.scene_2 || '/cache/scene_2.png'} className="w-full object-cover" style={{ aspectRatio: '4/3', borderRadius: '1px' }} onError={(e) => e.currentTarget.src='https://via.placeholder.com/400?text=Scene+2'} />
+                            <img src={sceneImages.scene_2 || (wantImages ? '/cache/scene_2.png' : CARTOON_PLACEHOLDER_2)} className="w-full object-cover" style={{ aspectRatio: '4/3', borderRadius: '1px' }} onError={(e) => e.currentTarget.src=CARTOON_PLACEHOLDER_2} />
                           </div>
                         </div>
                         
@@ -1899,7 +2128,7 @@ export default function LifeCHOPage() {
                         {/* 图片1 - 左下，歪斜 */}
                         <div className="absolute bottom-0 left-0 w-[40%] z-10" style={{ transform: 'rotate(4deg) translate(8px, 4px)' }}>
                           <div className="bg-white p-1.5 shadow-float" style={{ borderRadius: '2px' }}>
-                            <img src={sceneImages.scene_1 || '/cache/scene_1.png'} className="w-full object-cover" style={{ aspectRatio: '4/3', borderRadius: '1px' }} onError={(e) => e.currentTarget.src='https://via.placeholder.com/400?text=Scene+1'} />
+                            <img src={sceneImages.scene_1 || (wantImages ? '/cache/scene_1.png' : CARTOON_PLACEHOLDER_1)} className="w-full object-cover" style={{ aspectRatio: '4/3', borderRadius: '1px' }} onError={(e) => e.currentTarget.src=CARTOON_PLACEHOLDER_1} />
                           </div>
                         </div>
 

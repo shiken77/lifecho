@@ -49,10 +49,15 @@ def init_db():
             role TEXT,
             tone TEXT,
             rounds INTEGER DEFAULT 0,
-            created_at TEXT
+            created_at TEXT,
+            chat_turns TEXT
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_journals_date ON journals(date)")
+    try:
+        conn.execute("ALTER TABLE journals ADD COLUMN chat_turns TEXT")
+    except Exception:
+        pass
     conn.commit()
     conn.close()
 
@@ -1683,6 +1688,7 @@ class JournalSaveRequest(BaseModel):
     role: str = ""
     tone: str = ""
     rounds: int = 0
+    chat_turns: list = []                 # [{user_raw_text, user_ja, reply, translation, translation_en, suggestion, reply_audio_base64}, ...]
 
 def _save_base64_file(b64: str, dest: Path, is_audio: bool = False):
     """Decode base64 and write to file. Returns True on success."""
@@ -1755,12 +1761,31 @@ async def save_journal(req: JournalSaveRequest):
             _make_thumbnail(scene_1_file, thumb_file)
             thumbnail_path = f"{req.date}/{journal_id}/thumbnail.png"
 
+        # Process chat_turns: save reply audio files, strip base64 from stored JSON
+        chat_turns_for_db = []
+        for i, turn in enumerate(req.chat_turns):
+            turn_data = {
+                "user_raw_text": turn.get("user_raw_text", ""),
+                "user_ja": turn.get("user_ja", ""),
+                "reply": turn.get("reply", ""),
+                "translation": turn.get("translation", ""),
+                "translation_en": turn.get("translation_en", ""),
+                "suggestion": turn.get("suggestion", ""),
+                "reply_audio_path": None,
+            }
+            reply_audio_b64 = turn.get("reply_audio_base64")
+            if reply_audio_b64:
+                audio_file = entry_dir / f"reply_audio_{i}.mp3"
+                if _save_base64_file(reply_audio_b64, audio_file, is_audio=True):
+                    turn_data["reply_audio_path"] = f"{req.date}/{journal_id}/reply_audio_{i}.mp3"
+            chat_turns_for_db.append(turn_data)
+
         conn.execute(
             """INSERT INTO journals
                (id, date, session_num, title, diary_ja, diary_zh, podcast_script,
                 podcast_audio_path, scene_1_path, scene_2_path, thumbnail_path,
-                entry_text, role, tone, rounds, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                entry_text, role, tone, rounds, created_at, chat_turns)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 journal_id, req.date, session_num, req.title,
                 req.diary_ja, req.diary_zh,
@@ -1768,6 +1793,7 @@ async def save_journal(req: JournalSaveRequest):
                 audio_path, scene_1_path, scene_2_path, thumbnail_path,
                 req.entry_text, req.role, req.tone, req.rounds,
                 datetime.now().isoformat(),
+                json.dumps(chat_turns_for_db, ensure_ascii=False),
             ),
         )
         conn.commit()
@@ -1821,6 +1847,18 @@ async def get_journal(journal_id: str):
         if not row:
             raise HTTPException(status_code=404, detail="Journal not found")
 
+        # Parse chat_turns and convert audio paths to URLs
+        raw_chat_turns = json.loads(row["chat_turns"]) if row["chat_turns"] else []
+        chat_turns_out = []
+        for turn in raw_chat_turns:
+            t = dict(turn)
+            if t.get("reply_audio_path"):
+                t["reply_audio_url"] = f"/uploads/{t['reply_audio_path']}"
+            else:
+                t["reply_audio_url"] = None
+            t.pop("reply_audio_path", None)
+            chat_turns_out.append(t)
+
         return {
             "status": "SUCCESS",
             "id": row["id"],
@@ -1838,6 +1876,7 @@ async def get_journal(journal_id: str):
             "tone": row["tone"],
             "rounds": row["rounds"],
             "created_at": row["created_at"],
+            "chat_turns": chat_turns_out,
         }
     except HTTPException:
         raise
