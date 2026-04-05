@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { API_BASE_URL } from "../../config";
+import { useAuth } from "@/contexts/AuthContext";
+import { apiFetch } from "@/lib/apiFetch";
 
 interface ChatTurnData {
   user_raw_text: string;
@@ -49,6 +51,7 @@ function formatTime(seconds: number) {
 }
 
 export default function JournalDetail({ id }: { id: string }) {
+  const { accessToken, isLoading: authLoading } = useAuth();
   const router = useRouter();
   const [journal, setJournal] = useState<JournalData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -66,9 +69,15 @@ export default function JournalDetail({ id }: { id: string }) {
   const [showTranslation, setShowTranslation] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
+    if (authLoading) return;
+    if (!accessToken) {
+      setLoading(false);
+      setError("请先登录");
+      return;
+    }
     const fetchJournal = async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/api/journal/${id}`);
+        const res = await apiFetch(`${API_BASE_URL}/api/journal/${id}`, accessToken);
         if (res.ok) {
           const data = await res.json();
           setJournal(data);
@@ -85,7 +94,7 @@ export default function JournalDetail({ id }: { id: string }) {
       }
     };
     fetchJournal();
-  }, [id]);
+  }, [id, accessToken, authLoading]);
 
   useEffect(() => {
     return () => {

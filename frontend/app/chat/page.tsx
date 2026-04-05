@@ -8,53 +8,32 @@ import {
   Download, Share2
 } from 'lucide-react';
 import { API_BASE_URL } from '../config';
+import { useAuth } from '@/contexts/AuthContext';
+import { apiFetch } from '@/lib/apiFetch';
+import { chatSessionLocalKey } from '@/lib/chatSessionKeys';
+import {
+  fetchChatSessionRemote,
+  upsertChatSessionRemote,
+  deleteChatSessionRemote,
+} from '@/lib/chatSessionRemote';
+import type { CachedSession, ChatTurn } from '@/types/chatSession';
+import LoginModal from '@/components/LoginModal';
 
- 
+const GUEST_IMAGE_KEY = 'lifecho_guest_image_count';
 
-// --- 类型定义 ---
-interface ChatTurn {
-  user_raw_text: string;
-  user_ja: string;
-  reply: string;
-  translation: string;
-  translation_en?: string;
-  suggestion: any;
-}
+const REMOTE_SAVE_DEBOUNCE_MS = 2000;
 
-// --- 对话缓存 ---
-const CACHE_KEY = 'lifecho_chat_session';
-
-interface CachedSession {
-  timestamp: number;
-  stage: 'entry' | 'interaction';
-  subStage: 'chatting' | 'summarizing' | 'final';
-  chatTurns: ChatTurn[];
-  currentRound: number;
-  entryText: string;
-  role: string;
-  tone: string;
-  detectedRoles: string[];
-  conversationHistory: any[];
-  communicationRaw: any[];
-  hasStartedConversation: boolean;
-  replyAudios: Record<number, string>;
-  summaryData: any;
-  editableSummary: any;
-  pendingUserText?: string | null;
-  wantImages?: boolean;
-}
-
-function saveSession(data: CachedSession) {
+function saveSession(userId: string, data: CachedSession) {
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+    localStorage.setItem(chatSessionLocalKey(userId), JSON.stringify(data));
   } catch (e) {
     console.warn('Failed to save session to localStorage:', e);
   }
 }
 
-function loadSession(): CachedSession | null {
+function loadSession(userId: string): CachedSession | null {
   try {
-    const raw = localStorage.getItem(CACHE_KEY);
+    const raw = localStorage.getItem(chatSessionLocalKey(userId));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as CachedSession;
     if (!parsed.timestamp || !parsed.stage) return null;
@@ -64,9 +43,9 @@ function loadSession(): CachedSession | null {
   }
 }
 
-function clearSession() {
+function clearSession(userId: string) {
   try {
-    localStorage.removeItem(CACHE_KEY);
+    localStorage.removeItem(chatSessionLocalKey(userId));
   } catch {}
 }
 
@@ -120,6 +99,11 @@ function HandwrittenTitle() {
 }
 
 export default function LifeCHOPage() {
+  const { accessToken, user, isLoading: authLoading } = useAuth();
+  const uid = user?.id ?? '';
+  const backend = (path: string, init?: RequestInit) =>
+    apiFetch(`${API_BASE_URL}${path}`, accessToken, init);
+
   const [stage, setStage] = useState<'entry' | 'interaction'>('entry');
   const [subStage, setSubStage] = useState<'chatting' | 'summarizing' | 'final'>('chatting');
   
@@ -136,7 +120,7 @@ export default function LifeCHOPage() {
   
   // 用户配置状态
   const [tone, setTone] = useState<'温柔/友人' | '正常' | '严肃/工作'>('温柔/友人');
-  const [role, setRole] = useState('实验室的朋友');
+  const [role, setRole] = useState('lifecho');
   
   // Entry页面状态
   const [entryText, setEntryText] = useState('');
@@ -177,9 +161,24 @@ export default function LifeCHOPage() {
   // 图片生成开关（默认开启）
   const [wantImages, setWantImages] = useState(true);
 
+  // 游客图片生成限制 & 登录弹窗
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [loginPrompt, setLoginPrompt] = useState<string | undefined>();
+
+  function getGuestImageCount(): number {
+    try { return parseInt(localStorage.getItem(GUEST_IMAGE_KEY) || '0', 10); } catch { return 0; }
+  }
+  function incrementGuestImageCount() {
+    try { localStorage.setItem(GUEST_IMAGE_KEY, String(getGuestImageCount() + 1)); } catch {}
+  }
+  function canGuestGenerateImage(): boolean {
+    return getGuestImageCount() < 1;
+  }
+
   // 缓存恢复状态
   const [pendingRestore, setPendingRestore] = useState<CachedSession | null>(null);
   const cacheInitDone = React.useRef(false);
+  const remoteSaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // 对话轮次：先转写确认再发送
   const [pendingUserText, setPendingUserText] = useState<string | null>(null);
@@ -318,7 +317,7 @@ export default function LifeCHOPage() {
     
     setIsDetectingRoles(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/detect_roles`, {
+      const response = await backend(`/api/detect_roles`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -356,7 +355,7 @@ export default function LifeCHOPage() {
     setIsGeneratingAvatar(true);
     try {
       // 调用后端API生成头像
-      const response = await fetch('http://127.0.0.1:8000/api/generate_avatar', {
+      const response = await backend(`/api/generate_avatar`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -446,6 +445,11 @@ export default function LifeCHOPage() {
 
   const saveToJournal = async () => {
     if (isSavingJournal || journalSaved) return;
+    if (!uid) {
+      setLoginPrompt('登录后才能保存日记');
+      setShowLoginModal(true);
+      return;
+    }
     setIsSavingJournal(true);
     try {
       const today = new Date();
@@ -457,7 +461,7 @@ export default function LifeCHOPage() {
 
       const toneMap: Record<string, string> = { '温柔/友人': 'Gentle', '正常': 'Normal', '严肃/工作': 'Serious' };
 
-      const response = await fetch(`${API_BASE_URL}/api/journal/save`, {
+      const response = await backend(`/api/journal/save`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -489,7 +493,7 @@ export default function LifeCHOPage() {
         const data = await response.json();
         console.log('✅ Journal saved:', data.id);
         setJournalSaved(true);
-        clearSession();
+        if (uid) clearSession(uid);
       } else {
         const errText = await response.text();
         console.error('Journal save failed:', errText);
@@ -614,15 +618,43 @@ export default function LifeCHOPage() {
   const [isGeneratingReply, setIsGeneratingReply] = useState(false);
   const [hasStartedConversation, setHasStartedConversation] = useState(false); // 标记是否已开始对话
   
-  // 初始化：检测 localStorage 中是否有未完成的对话
+  // 初始化：合并 localStorage 与 Supabase 中较新的一份（按用户）
   useEffect(() => {
-    const cached = loadSession();
-    if (cached && cached.chatTurns && cached.chatTurns.length > 0) {
-      setPendingRestore(cached);
+    if (!uid) {
+      setLoading(false);
+      return;
     }
-    setLoading(false);
-    cacheInitDone.current = true;
-  }, []);
+    let cancelled = false;
+    (async () => {
+      const local = loadSession(uid);
+      const remote = await fetchChatSessionRemote(uid);
+      if (cancelled) return;
+
+      const candidates: CachedSession[] = [];
+      if (local) candidates.push(local);
+      if (remote?.session) candidates.push(remote.session);
+
+      if (candidates.length === 0) {
+        cacheInitDone.current = true;
+        setLoading(false);
+        return;
+      }
+
+      const best = candidates.reduce((a, b) =>
+        a.timestamp >= b.timestamp ? a : b
+      );
+
+      if (best.chatTurns && best.chatTurns.length > 0) {
+        setPendingRestore(best);
+      }
+      cacheInitDone.current = true;
+      setLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [uid]);
   
   // 当进入总结阶段时，调用总结API
   useEffect(() => {
@@ -637,7 +669,7 @@ export default function LifeCHOPage() {
             '严肃/工作': 'Serious'
           };
           
-          const response = await fetch(`${API_BASE_URL}/api/summarize`, {
+          const response = await backend(`/api/summarize`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -669,7 +701,7 @@ export default function LifeCHOPage() {
       }
       generateSummary();
     }
-  }, [subStage, communicationRaw, summaryData, conversationHistory, entryText, tone, role]);
+  }, [subStage, communicationRaw, summaryData, conversationHistory, entryText, tone, role, accessToken]);
   
   // 当进入最终阶段时，生成播客、日记、音频和图片
   useEffect(() => {
@@ -685,7 +717,7 @@ export default function LifeCHOPage() {
           };
           
           // 1. 生成播客和日记
-          const podcastResponse = await fetch(`${API_BASE_URL}/api/generate_podcast_and_diary`, {
+          const podcastResponse = await backend(`/api/generate_podcast_and_diary`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -706,7 +738,7 @@ export default function LifeCHOPage() {
             
             // 2. 生成播客音频
             if (podcastData.script && podcastData.script.length > 0) {
-              const audioResponse = await fetch(`${API_BASE_URL}/api/generate_podcast_audio`, {
+              const audioResponse = await backend(`/api/generate_podcast_audio`, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
@@ -729,36 +761,44 @@ export default function LifeCHOPage() {
             
             // 3. 生成场景图片（仅在开关开启时）
             if (wantImages) {
-              const imageResponse = await fetch(`${API_BASE_URL}/api/generate_image`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                  context: entryText,
-                  tone: toneMap[tone] || 'Gentle',
-                  mentorRole: role,
-                  turn: 6,
-                  history: conversationHistory
-                }),
-              });
-              
-              if (imageResponse.ok) {
-                const imageData = await imageResponse.json();
-                if (imageData.scenes && imageData.scenes.length >= 2) {
-                  const scene1 = imageData.scenes[0];
-                  const scene2 = imageData.scenes[1];
-                  
-                  if (scene1.image_base64) {
-                    const imgBlob1 = await fetch(`data:image/png;base64,${scene1.image_base64}`).then(res => res.blob());
-                    const imgUrl1 = URL.createObjectURL(imgBlob1);
-                    setSceneImages(prev => ({...prev, scene_1: imgUrl1}));
-                  }
-                  
-                  if (scene2.image_base64) {
-                    const imgBlob2 = await fetch(`data:image/png;base64,${scene2.image_base64}`).then(res => res.blob());
-                    const imgUrl2 = URL.createObjectURL(imgBlob2);
-                    setSceneImages(prev => ({...prev, scene_2: imgUrl2}));
+              const isGuest = !uid;
+              if (isGuest && !canGuestGenerateImage()) {
+                setLoginPrompt('登录后可无限生成 AI 图片');
+                setShowLoginModal(true);
+              } else {
+                if (isGuest) incrementGuestImageCount();
+
+                const imageResponse = await backend(`/api/generate_image`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    context: entryText,
+                    tone: toneMap[tone] || 'Gentle',
+                    mentorRole: role,
+                    turn: 6,
+                    history: conversationHistory
+                  }),
+                });
+                
+                if (imageResponse.ok) {
+                  const imageData = await imageResponse.json();
+                  if (imageData.scenes && imageData.scenes.length >= 2) {
+                    const scene1 = imageData.scenes[0];
+                    const scene2 = imageData.scenes[1];
+                    
+                    if (scene1.image_base64) {
+                      const imgBlob1 = await fetch(`data:image/png;base64,${scene1.image_base64}`).then(res => res.blob());
+                      const imgUrl1 = URL.createObjectURL(imgBlob1);
+                      setSceneImages(prev => ({...prev, scene_1: imgUrl1}));
+                    }
+                    
+                    if (scene2.image_base64) {
+                      const imgBlob2 = await fetch(`data:image/png;base64,${scene2.image_base64}`).then(res => res.blob());
+                      const imgUrl2 = URL.createObjectURL(imgBlob2);
+                      setSceneImages(prev => ({...prev, scene_2: imgUrl2}));
+                    }
                   }
                 }
               }
@@ -777,7 +817,7 @@ export default function LifeCHOPage() {
       }
       generateFinalOutput();
     }
-  }, [subStage, summaryData, finalOutput, communicationRaw, conversationHistory, entryText, tone, role, editableSummary]);
+  }, [subStage, summaryData, finalOutput, communicationRaw, conversationHistory, entryText, tone, role, editableSummary, wantImages, accessToken]);
 
   // 播放AI回复音频（从API返回的base64）
   const [replyAudios, setReplyAudios] = useState<Record<number, string>>({}); // idx -> base64
@@ -806,19 +846,22 @@ export default function LifeCHOPage() {
   };
 
   const dismissRestore = () => {
-    clearSession();
+    if (uid) {
+      clearSession(uid);
+      void deleteChatSessionRemote(uid);
+    }
     setPendingRestore(null);
   };
 
-  // --- 自动保存到 localStorage ---
+  // --- 自动保存到 localStorage + 防抖同步到 Supabase（换设备可恢复）---
   useEffect(() => {
-    if (!cacheInitDone.current) return;
+    if (!cacheInitDone.current || !uid) return;
     if (journalSaved) return;
 
     const hasContent = chatTurns.length > 0 || (stage === 'entry' && entryText.trim().length > 0);
     if (!hasContent) return;
 
-    saveSession({
+    const snapshot: CachedSession = {
       timestamp: Date.now(),
       stage,
       subStage,
@@ -836,8 +879,22 @@ export default function LifeCHOPage() {
       editableSummary,
       pendingUserText,
       wantImages,
-    });
-  }, [stage, subStage, chatTurns, currentRound, entryText, role, tone, detectedRoles, conversationHistory, communicationRaw, hasStartedConversation, replyAudios, summaryData, editableSummary, journalSaved, pendingUserText, wantImages]);
+    };
+
+    saveSession(uid, snapshot);
+
+    if (remoteSaveTimerRef.current) clearTimeout(remoteSaveTimerRef.current);
+    remoteSaveTimerRef.current = setTimeout(() => {
+      void upsertChatSessionRemote(uid, snapshot);
+    }, REMOTE_SAVE_DEBOUNCE_MS);
+
+    return () => {
+      if (remoteSaveTimerRef.current) {
+        clearTimeout(remoteSaveTimerRef.current);
+        remoteSaveTimerRef.current = null;
+      }
+    };
+  }, [uid, stage, subStage, chatTurns, currentRound, entryText, role, tone, detectedRoles, conversationHistory, communicationRaw, hasStartedConversation, replyAudios, summaryData, editableSummary, journalSaved, pendingUserText, wantImages]);
 
   const playReplyVoice = async (audioBase64: string | null, turnIdx?: number) => {
     if (!audioBase64) {
@@ -910,7 +967,7 @@ export default function LifeCHOPage() {
       };
       
       // 调用API生成第一轮AI提问（history为空）
-      const response = await fetch(`${API_BASE_URL}/api/chat`, {
+      const response = await backend(`/api/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1119,7 +1176,7 @@ export default function LifeCHOPage() {
     setIsTranscribingChat(true);
     setVoiceError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/api/transcribe`, {
+      const res = await backend(`/api/transcribe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ audio_base64: audioData.base64, audio_mime_type: audioData.mimeType }),
@@ -1159,7 +1216,7 @@ export default function LifeCHOPage() {
         '严肃/工作': 'Serious'
       };
       
-      const response = await fetch(`${API_BASE_URL}/api/chat`, {
+      const response = await backend(`/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1284,7 +1341,7 @@ export default function LifeCHOPage() {
   };
 
 
-  if (loading) return <div className="h-screen flex items-center justify-center bg-[#FEFCF6]"><div className="w-6 h-6 border-2 border-[#F4A261]/30 border-t-[#F4A261] rounded-full animate-spin"></div></div>;
+  if (loading) return <div className="paper-texture h-screen flex items-center justify-center"><div className="w-6 h-6 border-2 border-[#F4A261]/40 border-t-[#F4A261] rounded-full animate-spin"></div></div>;
 
   // 手帐风格的装饰食物emoji
   // 暖色系装饰图标 — 四周 + 中间散落，自然随意
@@ -1314,8 +1371,11 @@ export default function LifeCHOPage() {
   ];
 
   return (
-    <div className="h-screen w-screen bg-[#FEFCF6] text-[#3D3630] font-sans selection:bg-[#F4A261]/20 overflow-hidden">
-      <main className="w-full h-full">
+    <div className={`h-screen w-screen text-[#3D3630] font-sans overflow-hidden ${
+      stage === 'entry' ? 'paper-texture selection:bg-[#F4A261]/20' : 'bg-[#F4A261] selection:bg-white/20'
+    }`}>
+      {/* pt-4 与 layout 汉堡键 top-4 对齐；pl-14 避让左侧固定按钮 */}
+      <main className="w-full h-full min-h-0 box-border pt-4 pl-14 pr-4 pb-4">
         
         {/* 恢复对话提示 */}
         <AnimatePresence>
@@ -1369,7 +1429,7 @@ export default function LifeCHOPage() {
 
         <AnimatePresence mode="wait">
           {stage === 'entry' && (
-            <motion.div key="entry" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, y: -20 }} className="w-full h-full relative overflow-hidden paper-texture">
+            <motion.div key="entry" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, y: -20 }} className="relative h-full w-full overflow-hidden">
               
               {decoItems.map((item, i) => (
                 <motion.div 
@@ -1474,7 +1534,7 @@ export default function LifeCHOPage() {
                             setIsTranscribing(true);
                             try {
                               console.log(`🎤 发送音频到 /api/transcribe, base64长度=${audioData.base64.length}, mime=${audioData.mimeType}`);
-                              const res = await fetch(`${API_BASE_URL}/api/transcribe`, {
+                              const res = await backend(`/api/transcribe`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ audio_base64: audioData.base64, audio_mime_type: audioData.mimeType }),
@@ -1546,7 +1606,7 @@ export default function LifeCHOPage() {
           )}
 
           {stage === 'interaction' && (
-            <motion.div key="interaction" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full h-full grid grid-cols-[2fr_3fr] gap-5 p-5 min-h-0 bg-[#F4A261]">
+            <motion.div key="interaction" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="w-full h-full grid grid-cols-[2fr_3fr] gap-5 min-h-0 bg-[#F4A261] px-5 pb-5 pt-0">
               
               {/* 左侧：控制交互栏 - 手帐侧边栏风格 */}
               <div className="flex flex-col min-h-0 bg-white rounded-2xl shadow-lg overflow-hidden">
@@ -1580,7 +1640,7 @@ export default function LifeCHOPage() {
                             <option key={idx} value={r}>{r}</option>
                           ))
                         ) : (
-                          <option value="">Enter event first</option>
+                          <option value="">Lifecho</option>
                         )}
                       </select>
                     </div>
@@ -1954,7 +2014,7 @@ export default function LifeCHOPage() {
                                     '严肃/工作': 'Serious'
                                   };
                                   
-                                  const refineResponse = await fetch(`${API_BASE_URL}/api/refine_summary`, {
+                                  const refineResponse = await backend(`/api/refine_summary`, {
                                     method: 'POST',
                                     headers: {
                                       'Content-Type': 'application/json',
@@ -2004,9 +2064,19 @@ export default function LifeCHOPage() {
                             <p className="text-[10px] text-[#3D3630]/40 mt-0.5">
                               {wantImages ? 'AI will create scene illustrations' : 'Use cute cartoon placeholders to save quota'}
                             </p>
+                            {!uid && !canGuestGenerateImage() && (
+                              <p className="text-[10px] text-[#E76F51] mt-0.5">游客已用完免费额度，登录可无限生成</p>
+                            )}
                           </div>
                           <button
-                            onClick={() => setWantImages(prev => !prev)}
+                            onClick={() => {
+                              if (!uid && !wantImages && !canGuestGenerateImage()) {
+                                setLoginPrompt('登录后可无限生成 AI 图片');
+                                setShowLoginModal(true);
+                                return;
+                              }
+                              setWantImages(prev => !prev);
+                            }}
                             className={`relative ml-3 w-11 h-6 rounded-full transition-colors flex-shrink-0 ${wantImages ? 'bg-[#E76F51]' : 'bg-[#3D3630]/15'}`}
                           >
                             <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform ${wantImages ? 'left-[22px]' : 'left-0.5'}`} />
@@ -2200,6 +2270,8 @@ export default function LifeCHOPage() {
         @import url('https://fonts.googleapis.com/css2?family=Kosugi+Maru&family=M+PLUS+Rounded+1c:wght@300;400;500&family=Zen+Maru+Gothic:wght@400;500&family=Permanent+Marker&family=Patrick+Hand&family=Caveat:wght@400;700&display=swap');
         .font-serif { font-family: 'Noto Serif SC', serif; }
       `}</style>
+
+      <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} prompt={loginPrompt} />
     </div>
   );
 }

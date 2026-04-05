@@ -3,6 +3,7 @@
 import "./globals.css";
 import { useState } from "react";
 import Sidebar from "../components/Sidebar";
+import { AuthProvider } from "@/contexts/AuthContext";
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -13,6 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         className="bg-[#FEFCF6] font-sans text-[#3D3630] m-0 p-0 overflow-hidden"
         style={{ fontFamily: "var(--font-inter)" }}
       >
+        <AuthProvider>
         {/* Hamburger menu button — always visible */}
         <button
           onClick={() => setSidebarOpen(true)}
@@ -40,6 +42,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
         {/* Page content */}
         {children}
+        </AuthProvider>
       </body>
     </html>
   );
