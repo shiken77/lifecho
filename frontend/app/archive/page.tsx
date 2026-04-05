@@ -318,7 +318,7 @@ export default function ArchivePage() {
 
                         {firstThumb && firstWithThumb && (
                           <Link
-                            href={`/archive/${firstWithThumb.id}`}
+                            href={`/archive/detail?id=${encodeURIComponent(firstWithThumb.id)}`}
                             className="absolute inset-[3px] top-7 bottom-8 z-[1] rounded-sm overflow-hidden bg-[#F0E4D8] block ring-1 ring-amber-200/40"
                           >
                             <img
@@ -334,7 +334,7 @@ export default function ArchivePage() {
                             {dayEntries.map((entry, ei) => (
                               <Link
                                 key={entry.id}
-                                href={`/archive/${entry.id}`}
+                                href={`/archive/detail?id=${encodeURIComponent(entry.id)}`}
                                 onClick={(e) => e.stopPropagation()}
                                 title={`${entry.title || `${entry.rounds} rounds`}`}
                               >

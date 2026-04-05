@@ -75,6 +75,11 @@ export default function JournalDetail({ id }: { id: string }) {
       setError("请先登录");
       return;
     }
+    if (!id?.trim()) {
+      setLoading(false);
+      setError("缺少日记 ID");
+      return;
+    }
     const fetchJournal = async () => {
       try {
         const res = await apiFetch(`${API_BASE_URL}/api/journal/${id}`, accessToken);
