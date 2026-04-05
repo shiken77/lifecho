@@ -1,8 +1,11 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
+import { useAuth } from "@/contexts/AuthContext";
+import LoginModal from "./LoginModal";
 
 interface SidebarProps {
   isOpen: boolean;
@@ -55,8 +58,12 @@ const overlayVariants = {
 
 export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const { user, signOut } = useAuth();
+  const [showLogin, setShowLogin] = useState(false);
 
   return (
+    <>
     <AnimatePresence>
       {isOpen && (
         <>
@@ -141,8 +148,44 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
               })}
             </div>
 
-            {/* Footer decoration */}
-            <div className="px-5 py-4 border-t border-[#F4A261]/15">
+            {/* Footer */}
+            <div className="px-5 py-4 border-t border-[#F4A261]/15 space-y-3">
+              {user ? (
+                <>
+                  {user.email && (
+                    <p className="text-[10px] text-[#3D3630]/45 truncate px-1" title={user.email}>
+                      {user.email}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      onClose();
+                      await signOut();
+                      router.refresh();
+                    }}
+                    className="w-full text-left text-xs font-medium text-[#E76F51]/80 hover:text-[#E76F51] px-1 py-1.5 rounded-lg hover:bg-[#E76F51]/10 transition-colors"
+                  >
+                    退出登录
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    setShowLogin(true);
+                  }}
+                  className="w-full flex items-center gap-2 text-xs font-medium text-[#E76F51] px-1 py-2 rounded-lg hover:bg-[#E76F51]/10 transition-colors"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                    <polyline points="10 17 15 12 10 7" />
+                    <line x1="15" y1="12" x2="3" y2="12" />
+                  </svg>
+                  登录 / 注册
+                </button>
+              )}
               <div className="flex items-center gap-2 text-[10px] text-[#3D3630]/25">
                 <span>☕</span>
                 <span className="italic font-serif">Your daily journal companion</span>
@@ -161,5 +204,8 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
         </>
       )}
     </AnimatePresence>
+
+    <LoginModal isOpen={showLogin} onClose={() => setShowLogin(false)} />
+    </>
   );
 }

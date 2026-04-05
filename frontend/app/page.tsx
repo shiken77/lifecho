@@ -11,7 +11,7 @@ export default function HomePage() {
   }, [router]);
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-echo-cream">
+    <div className="paper-texture flex min-h-screen w-full items-center justify-center">
       <div className="text-center">
         <p className="text-echo-ink text-lg">正在跳转...</p>
       </div>
